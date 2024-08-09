@@ -19,6 +19,9 @@ export interface paths {
      * - [`purl` Spec](https://github.com/package-url/purl-spec)
      * - [CycloneDX Spec](https://cyclonedx.org/specification/overview/#components)
      *
+     * This endpoint returns the latest available alert data for artifacts in the batch (stale while revalidate).
+     * Actively running analysis will be returned when available on subsequent runs.
+     *
      * ## Examples:
      *
      * ### Looking up an npm package:
@@ -82,6 +85,71 @@ export interface paths {
      */
     post: operations["batchPackageFetch"];
   };
+  "/license-policy": {
+    /**
+     * License Policy (Beta)
+     * @description Diff the license information from a list of packages (as PURL strings) with a configurable license allow list.
+     * Package URLs (PURLs) are an ecosystem agnostic way to identify packages.
+     *
+     * ## Allow List Schema
+     *
+     * ```json
+     * {
+     *   requiredApprovalSources?: Array<"fsf" | "osi">,
+     *   allowedApprovalSources?: Array<"fsf" | "osi">,
+     *   allowedFamilies?: Array<"copyleft" | "permissive">,
+     *   allowedTiers?: Array<PermissiveTier | CopyleftTier>,
+     *   allowedSpdxAtoms?: Array<string>
+     * }
+     * ```
+     *
+     * where
+     *
+     * PermissiveTier ::= "model permissive" | "gold" | "silver" | "bronze" | "lead"
+     * CopyleftTier ::= "maximal copyleft" | "network copyleft" | "strong copyleft" | "weak copyleft"
+     *
+     * readers can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+     *
+     * ## Return value
+     *
+     * The returned values are objects containing information about license data from the requested
+     * PURLs which violates the allow list. The returned objects contain an spdx disjunction describing the
+     * license data for the violation, the provenance of that information, and a filepath to the source
+     * of the violation (if one is available; there may not be an available path for things like license information
+     * taken from registry metdata). Returned objects have the following shape:
+     * ```json
+     * {
+     *   spdxDisj: string,
+     *   provenance: string,
+     *   filepath?: string,
+     * }
+     * ```
+     *
+     * ### Example request bodies:
+     * ```json
+     * {
+     *   "components": [
+     *     {
+     *       "purl": "pkg:pypi/alt-aiohttp-cors@0.7.1?artifact_id=tar-gz"
+     *     },
+     *     {
+     *       "purl": "pkg:npm/express@4.19.2"
+     *     }
+     *   ],
+     *   "license_allow_list": {
+     *     "allowedFamilies": ["permissive"],
+     *     "allowedSpdxAtoms": ["GPL-1.0-only WITH Autoconf-exception-3.0"]
+     *   }
+     * }
+     * ```
+     *
+     * This endpoint consumes 100 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - packages:list
+     */
+    post: operations["licensePolicy"];
+  };
   "/orgs/{org_slug}/audit-log": {
     /**
      * Get Audit Log Events
@@ -144,6 +212,9 @@ export interface paths {
     /**
      * Stream full scan
      * @description Stream all SBOM artifacts for a full scan.
+     *
+     * This endpoint returns the latest, available alert data for artifacts in the full scan (stale while revalidate).
+     * Actively running analysis will be returned when available on subsequent runs.
      *
      * This endpoint consumes 1 unit of your quota.
      *
@@ -269,6 +340,7 @@ export interface paths {
   "/dependencies/upload": {
     /**
      * Create a snapshot of all dependencies from manifest information
+     * @deprecated
      * @description Upload a set of manifest or lockfiles to get your dependency tree analyzed by Socket.
      * You can upload multiple lockfiles in the same request, but each filename must be unique.
      *
@@ -364,6 +436,18 @@ export interface paths {
      */
     get: operations["getRepoList"];
   };
+  "/threat-feed": {
+    /**
+     * Get Threat Feed Items (Beta)
+     * @description Paginated list of threat feed items.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - threat-feed:list
+     */
+    get: operations["getThreatFeedItems"];
+  };
   "/openapi": {
     /**
      * Returns the OpenAPI definition
@@ -402,7 +486,7 @@ export interface paths {
   "/settings": {
     /**
      * Calculate settings
-     * @description Get your current settings the requested organizations and default settings to allow deferrals.
+     * @description Get current settings for the requested organizations and default settings to allow deferrals.
      *
      * This endpoint consumes 1 unit of your quota.
      *
@@ -494,6 +578,10 @@ export interface components {
     };
     SocketBatchPURLFetch: {
       components: components["schemas"]["SocketBatchPURLRequest"][];
+    };
+    LicenseAllowListRequest: {
+      components: components["schemas"]["SocketBatchPURLRequest"][];
+      license_allow_list: components["schemas"]["LicenseAllowList"];
     };
     CDXManifestSchema: {
       /** @default CycloneDX */
@@ -716,6 +804,13 @@ export interface components {
     SocketBatchPURLRequest: {
       /** @default */
       purl: string;
+    };
+    LicenseAllowList: {
+      requiredApprovalSources: string[];
+      allowedApprovalSources: string[];
+      allowedFamilies: string[];
+      allowedTiers: string[];
+      allowedSpdxAtoms: string[];
     };
     CDXComponentSchema: {
       /** @default */
@@ -1650,6 +1745,20 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
+      type?: "suspiciousStarActivity";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default 0 */
+          percentageSuspiciousStars: number;
+          /** @default */
+          repository: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
       type?: "unpopularPackage";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
@@ -2292,6 +2401,9 @@ export interface operations {
    * - [`purl` Spec](https://github.com/package-url/purl-spec)
    * - [CycloneDX Spec](https://cyclonedx.org/specification/overview/#components)
    *
+   * This endpoint returns the latest available alert data for artifacts in the batch (stale while revalidate).
+   * Actively running analysis will be returned when available on subsequent runs.
+   *
    * ## Examples:
    *
    * ### Looking up an npm package:
@@ -2381,6 +2493,98 @@ export interface operations {
     };
   };
   /**
+   * License Policy (Beta)
+   * @description Diff the license information from a list of packages (as PURL strings) with a configurable license allow list.
+   * Package URLs (PURLs) are an ecosystem agnostic way to identify packages.
+   *
+   * ## Allow List Schema
+   *
+   * ```json
+   * {
+   *   requiredApprovalSources?: Array<"fsf" | "osi">,
+   *   allowedApprovalSources?: Array<"fsf" | "osi">,
+   *   allowedFamilies?: Array<"copyleft" | "permissive">,
+   *   allowedTiers?: Array<PermissiveTier | CopyleftTier>,
+   *   allowedSpdxAtoms?: Array<string>
+   * }
+   * ```
+   *
+   * where
+   *
+   * PermissiveTier ::= "model permissive" | "gold" | "silver" | "bronze" | "lead"
+   * CopyleftTier ::= "maximal copyleft" | "network copyleft" | "strong copyleft" | "weak copyleft"
+   *
+   * readers can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+   *
+   * ## Return value
+   *
+   * The returned values are objects containing information about license data from the requested
+   * PURLs which violates the allow list. The returned objects contain an spdx disjunction describing the
+   * license data for the violation, the provenance of that information, and a filepath to the source
+   * of the violation (if one is available; there may not be an available path for things like license information
+   * taken from registry metdata). Returned objects have the following shape:
+   * ```json
+   * {
+   *   spdxDisj: string,
+   *   provenance: string,
+   *   filepath?: string,
+   * }
+   * ```
+   *
+   * ### Example request bodies:
+   * ```json
+   * {
+   *   "components": [
+   *     {
+   *       "purl": "pkg:pypi/alt-aiohttp-cors@0.7.1?artifact_id=tar-gz"
+   *     },
+   *     {
+   *       "purl": "pkg:npm/express@4.19.2"
+   *     }
+   *   ],
+   *   "license_allow_list": {
+   *     "allowedFamilies": ["permissive"],
+   *     "allowedSpdxAtoms": ["GPL-1.0-only WITH Autoconf-exception-3.0"]
+   *   }
+   * }
+   * ```
+   *
+   * This endpoint consumes 100 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - packages:list
+   */
+  licensePolicy: {
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["LicenseAllowListRequest"];
+      };
+    };
+    responses: {
+      /** @description Socket issue lists and scores for all packages */
+      200: {
+        content: {
+          "application/x-ndjson": {
+              /** @default */
+              spdxDisj: string;
+              /** @default */
+              provenance: string;
+              /** @default */
+              filepath: string;
+              /** @default */
+              purl: string;
+            }[];
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+      500: components["responses"]["SocketInternalServerError"];
+    };
+  };
+  /**
    * Get Audit Log Events
    * @description Paginated list of audit log events.
    *
@@ -2393,7 +2597,7 @@ export interface operations {
     parameters: {
       query?: {
         /** @description Filter audit log events by type. Omit for all types. */
-        type?: "BookDemo" | "CancelInvitation" | "ChangeMemberRole" | "ChangePlanSubscriptionSeats" | "ContactForm" | "CreateApiToken" | "CreateUser" | "GithubAppInstallation" | "JoinOrganizationByVcs" | "LinkAccount" | "RemoveMember" | "ResetInvitationLink" | "ResetOrganizationSettingToDefault" | "RotateApiToken" | "SendInvitation" | "SignIn" | "SignOut" | "Subscribe" | "SyncOrganization" | "TransferOwnership" | "UpdateAlertTriage" | "UpdateApiTokenName" | "UpdateApiTokenScopes" | "UpdateApiTokenVisibility" | "UpdateOrganizationSetting" | "UpgradeOrganizationPlan" | "VerifiedEmail" | "DeleteRepository" | "DeleteReport";
+        type?: "BookDemo" | "CancelInvitation" | "ChangeMemberRole" | "ChangePlanSubscriptionSeats" | "ContactForm" | "CreateApiToken" | "CreateUser" | "GithubAppInstallation" | "JoinOrganization" | "JoinOrganizationByVcs" | "LinkAccount" | "RemoveMember" | "ResetInvitationLink" | "ResetOrganizationSettingToDefault" | "RotateApiToken" | "SendInvitation" | "SignIn" | "SignOut" | "Subscribe" | "SyncOrganization" | "TransferOwnership" | "UpdateAlertTriage" | "UpdateApiTokenName" | "UpdateApiTokenScopes" | "UpdateApiTokenVisibility" | "UpdateOrganizationSetting" | "UpgradeOrganizationPlan" | "VerifiedEmail" | "DeleteRepository" | "DeleteReport";
         /** @description Number of events per page */
         per_page?: number;
         /** @description Page token */
@@ -2680,6 +2884,9 @@ export interface operations {
   /**
    * Stream full scan
    * @description Stream all SBOM artifacts for a full scan.
+   *
+   * This endpoint returns the latest, available alert data for artifacts in the full scan (stale while revalidate).
+   * Actively running analysis will be returned when available on subsequent runs.
    *
    * This endpoint consumes 1 unit of your quota.
    *
@@ -3466,6 +3673,7 @@ export interface operations {
   };
   /**
    * Create a snapshot of all dependencies from manifest information
+   * @deprecated
    * @description Upload a set of manifest or lockfiles to get your dependency tree analyzed by Socket.
    * You can upload multiple lockfiles in the same request, but each filename must be unique.
    *
@@ -3751,6 +3959,59 @@ export interface operations {
     };
   };
   /**
+   * Get Threat Feed Items (Beta)
+   * @description Paginated list of threat feed items.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - threat-feed:list
+   */
+  getThreatFeedItems: {
+    parameters: {
+      query?: {
+        /** @description Number of items per page */
+        per_page?: number;
+        /** @description Page token */
+        page?: string;
+      };
+    };
+    responses: {
+      /** @description The paginated list of items in the threat feed and the next page querystring token. */
+      200: {
+        content: {
+          "application/json": {
+            results: {
+                /** @default */
+                createdAt?: string;
+                /** @default */
+                description?: string;
+                /** @default 0 */
+                id?: number;
+                /** @default */
+                locationHtmlUrl?: string;
+                /** @default */
+                packageHtmlUrl?: string;
+                /** @default */
+                purl?: string;
+                /** @default */
+                removedAt?: string;
+                /** @default */
+                threatType?: string;
+              }[];
+            /** @default */
+            nextPage: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
    * Returns the OpenAPI definition
    * @description Retrieve the API specification in an Openapi JSON format.
    *
@@ -3831,7 +4092,7 @@ export interface operations {
   };
   /**
    * Calculate settings
-   * @description Get your current settings the requested organizations and default settings to allow deferrals.
+   * @description Get current settings for the requested organizations and default settings to allow deferrals.
    *
    * This endpoint consumes 1 unit of your quota.
    *
@@ -3839,6 +4100,7 @@ export interface operations {
    * - Any
    */
   postSettings: {
+    /** @description Array of organization selector objects (with `organization` field holding the organization ID) to get settings for */
     requestBody?: {
       content: {
         "application/json": {
@@ -3848,7 +4110,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Organization settings */
+      /** @description Organization settings. Returned object contains default issue rules and an array of entries, with each entry representing an organization's settings. */
       200: {
         content: {
           "application/json": {
