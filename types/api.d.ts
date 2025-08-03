@@ -7,7 +7,7 @@
 export interface paths {
   "/purl": {
     /**
-     * Get Packages (Beta)
+     * Get Packages by PURL
      * @description Batch retrieval of package metadata and alerts by PURL strings. Compatible witch CycloneDX reports.
      *
      * Package URLs (PURLs) are an ecosystem agnostic way to identify packages.
@@ -18,6 +18,9 @@ export interface paths {
      *
      * - [`purl` Spec](https://github.com/package-url/purl-spec)
      * - [CycloneDX Spec](https://cyclonedx.org/specification/overview/#components)
+     *
+     * This endpoint returns the latest available alert data for artifacts in the batch (stale while revalidate).
+     * Actively running analysis will be returned when available on subsequent runs.
      *
      * ## Examples:
      *
@@ -82,6 +85,336 @@ export interface paths {
      */
     post: operations["batchPackageFetch"];
   };
+  "/license-policy": {
+    /**
+     * License Policy (Beta)
+     * @description Compare the license data found for a list of packages (given as PURL strings) with the contents of a configurable license policy,
+     * returning information about license data which does not comply with the license allow list.
+     *
+     * ## Example request body:
+     *
+     * ```json
+     * {
+     *   "components": [
+     *     {
+     *       "purl": "pkg:npm/lodash@4.17.21"
+     *     },
+     *     {
+     *       "purl": "pkg:npm/lodash@4.14.1"
+     *     }
+     *   ],
+     *   "allow": [
+     *     "permissive",
+     *     "pkg:npm/lodash?file_name=foo/test/*&version_glob=4.17.*"
+     *   ],
+     *   "warn": [
+     *     "copyleft",
+     *     "pkg:npm/lodash?file_name=foo/prod/*&version_glob=4.14.*"
+     *   ],
+     *   "options": ["toplevelOnly"]
+     * }
+     * ```
+     *
+     *
+     * ## Return value
+     *
+     * For each requested PURL, an array is returned. Each array contains a list of license policy violations
+     * detected for the requested PURL.
+     *
+     * Violations are accompanied by a string identifying the offending license data as `spdxAtomOrExtraData`,
+     * a message describing why the license data is believed to be incompatible with the license policy, and a list
+     * of locations (by filepath or other provenance information) where the offending license data may be found.
+     *
+     * ```json
+     * Array<
+     *   Array<{
+     *     filepathOrProvenance: Array<string>,
+     *     level: "warning" | "violation",
+     *     purl: string,
+     *     spdxAtomOrExtraData: string,
+     *     violationExplanation: string
+     *   }>
+     * >
+     * ```
+     *
+     *
+     * ## License policy schema
+     *
+     * ```json
+     * {
+     *   allow?: Array<string>
+     *   warn?: Array<string>
+     *   options?: Array<string>
+     * }
+     * ```
+     *
+     * Elements of the `allow` and `warn` arrays strings representing items which should be allowed, or which should trigger a warning; license data found in pacakge which not present in either array will produce a license violation (effectively a "hard" error). For example, to allow Apache-2.0 and MIT to the allow list, simply add the strings "Apache-2.0" and "MIT" to the `allow` array. Strings appearing in these arrays are generally "what you see is what you get", with two important exceptions: strings which are recognized as license classes and strings which are recognized as PURLs are handled differently to allow for more flexible license policy creation.
+     *
+     * ## License Classes
+     *
+     * Strings which are license classes will expand to a list of licenses known to be in that particular license class. Recognized license classes are:
+     *   'permissive',
+     *   'permissive (model)',
+     *   'permissive (gold)',
+     *   'permissive (silver)',
+     *   'permissive (bronze)',
+     *   'permissive (lead)',
+     *   'copyleft',
+     *   'maximal copyleft',
+     *   'network copyleft',
+     *   'strong copyleft',
+     *   'weak copyleft',
+     *   'contributor license agreement',
+     *   'public domain',
+     *   'proprietary free',
+     *   'source available',
+     *   'proprietary',
+     *   'commercial',
+     *   'patent'
+     *
+     * Users can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+     *
+     *
+     * ## PURLs
+     *
+     * Users may also modify their license policy's allow and warn lists by using [package URLs](https://github.com/package-url/purl-spec) (aka PURLs), which support glob patterns to allow a range of versions, files and directories, etc.
+     *
+     * purl qualifiers which support globs are `filename`, `version_glob`, `artifact_id` and `license_provenance` (primarily used for allowing data from registry metadata).
+     *
+     * ### Examples:
+     * Allow all license data found in a specific version of a package 4.14.1: `pkg:npm/lodash@4.14.1`
+     * Allow all license data found in a version range of a package: `pkg:npm/lodash?version_glob=15.*`
+     * Allow all license data in the test directory of a given package for certain version ranges: `pkg:npm/lodash@15.*.*?file_name=lodash/test/*`
+     * Allow all license data taken from the package registry for a package and version range: `pkg:npm/lodash?version_glob=*&license_provenance=registry_metadata`
+     *
+     * ## Available options
+     *
+     * `toplevelOnly`: only apply the license policy to "top level" license data in a package, which includes registry metadata, LICENSE files, and manifest files which are closest to the root of the package.
+     *
+     * `applyToUnidentified`: Apply license policy to found but unidentified license data. If enabled, the license policy will be applied to license data which could not be affirmatively identified as a known license (this will effectively merge the license policy violation and unidentified license alerts). If disabled, license policy alerts will only be shown for license data which is positively identified as something not allowed or set to warn by the license policy.
+     *
+     * This endpoint consumes 100 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     *       - packages:list
+     * - license-policy:read
+     */
+    post: operations["licensePolicy"];
+  };
+  "/saturate-license-policy": {
+    /**
+     * Saturate License Policy (Legacy)
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/updateorglicensepolicy) for more information. Use the [successor version](/v0/orgs/{org_slug}/settings/license-policy) instead.
+     *
+     * Get the "saturated" version of a license policy's allow list, filling in the entire set of allowed
+     * license data. For example, the saturated form of a license allow list which only specifies that
+     * licenses in the tier "maximal copyleft" are allowed is shown below (note the expanded `allowedStrings` property):
+     *
+     * ```json
+     * {
+     *   "allowedApprovalSources": [],
+     *   "allowedFamilies": [],
+     *   "allowedTiers": [
+     *     "maximal copyleft"
+     *   ],
+     *   "allowedStrings": [
+     *     "Parity-6.0.0",
+     *     "QPL-1.0-INRIA-2004",
+     *     "QPL-1.0",
+     *     "RPL-1.1",
+     *     "RPL-1.5"
+     *   ],
+     *   "allowedPURLs": [],
+     *   "focusAlertsHere": false
+     * }
+     * ```
+     *
+     * This may be helpful for users who want to compose more complex sets of allowed license data via
+     * the "allowedStrings" property, or for users who want to know more about the contents of a particular
+     * license group (family, tier, or approval source).
+     *
+     * ## Allow List Schema
+     *
+     * ```json
+     * ```
+     *
+     * where
+     *
+     * PermissiveTier ::= "model permissive" | "gold" | "silver" | "bronze" | "lead"
+     * CopyleftTier ::= "maximal copyleft" | "network copyleft" | "strong copyleft" | "weak copyleft"
+     *
+     * ## Return Value
+     *
+     * The returned value has the same shape as a license allow list:
+     *
+     * ```json
+     * {
+     *   allowedApprovalSources?: Array<"fsf" | "osi">,
+     *   allowedFamilies?: Array<"copyleft" | "permissive">,
+     *   allowedTiers?: Array<PermissiveTier | CopyleftTier>,
+     *   allowedStrings?: Array<string>
+     *   allowedPURLs?: Array<string>
+     *   focusAlertsHere?: boolean
+     * }
+     * ```
+     *
+     * where
+     *
+     * PermissiveTier ::= "model permissive" | "gold" | "silver" | "bronze" | "lead"
+     * CopyleftTier ::= "maximal copyleft" | "network copyleft" | "strong copyleft" | "weak copyleft"
+     *
+     * readers can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+     *
+     * ### Example request bodies:
+     * ```json
+     * {
+     *   "allowedApprovalSources": ["fsf"],
+     *   "allowedPURLs": [],
+     *   "allowedFamilies": ["copyleft"],
+     *   "allowedTiers": ["model permissive"],
+     *   "allowedStrings": ["License :: OSI Approved :: BSD License"],
+     *   "focusAlertsHere": false
+     * }
+     * ```
+     *
+     * This endpoint consumes 100 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - packages:list
+     */
+    post: operations["saturateLicensePolicy"];
+  };
+  "/license-metadata": {
+    /**
+     * License Metadata
+     * @description For an array of license identifiers or names (short form SPDX identifiers, or long form license names),
+     * returns an array of metadata for the corresponding license, if the license is recognized. If the query
+     * parameter `includetext=true` is set, the returned metadata will also include the license text.
+     *
+     *
+     * ## Example request body:
+     *
+     * ```json
+     * [
+     *   "Apache-2.0",
+     *   "BSD Zero Clause License"
+     * ]
+     * ```
+     *
+     *
+     * ## Return value
+     *
+     * ```json
+     * // Response schema:
+     * Array<{
+     *   licenseId: string,
+     *   name?: string,
+     *   deprecated?: string,
+     *   crossref?: string
+     *   classes: Array<string>
+     *   text?: string
+     * }>
+     *
+     * // Example response:
+     * [
+     *   {
+     *     "licenseId": "Apache-2.0",
+     *     "name": "Apache License 2.0",
+     *     "deprecated": false,
+     *     "crossref": "https://spdx.org/licenses/Apache-2.0.html",
+     *     "classes": [
+     *       "fsf libre",
+     *       "osi approved",
+     *       "permissive (silver)"
+     *     ]
+     *   },
+     *   {
+     *     "licenseId": "0BSD",
+     *     "name": "BSD Zero Clause License",
+     *     "deprecated": false,
+     *     "crossref": "https://spdx.org/licenses/0BSD.html",
+     *     "classes": [
+     *       "osi approved",
+     *       "permissive (bronze)"
+     *     ]
+     *   }
+     * ]
+     * ```
+     *
+     *
+     * ## License policy schema
+     *
+     * ```json
+     * {
+     *   allow?: Array<string>
+     *   warn?: Array<string>
+     *   options?: Array<string>
+     * }
+     * ```
+     *
+     * Elements of the `allow` and `warn` arrays strings representing items which should be allowed, or which should trigger a warning; license data found in pacakge which not present in either array will produce a license violation (effectively a "hard" error). For example, to allow Apache-2.0 and MIT to the allow list, simply add the strings "Apache-2.0" and "MIT" to the `allow` array. Strings appearing in these arrays are generally "what you see is what you get", with two important exceptions: strings which are recognized as license classes and strings which are recognized as PURLs are handled differently to allow for more flexible license policy creation.
+     *
+     * ## License Classes
+     *
+     * Strings which are license classes will expand to a list of licenses known to be in that particular license class. Recognized license classes are:
+     *   'permissive',
+     *   'permissive (model)',
+     *   'permissive (gold)',
+     *   'permissive (silver)',
+     *   'permissive (bronze)',
+     *   'permissive (lead)',
+     *   'copyleft',
+     *   'maximal copyleft',
+     *   'network copyleft',
+     *   'strong copyleft',
+     *   'weak copyleft',
+     *   'contributor license agreement',
+     *   'public domain',
+     *   'proprietary free',
+     *   'source available',
+     *   'proprietary',
+     *   'commercial',
+     *   'patent'
+     *
+     * Users can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+     *
+     *
+     * ## PURLs
+     *
+     * Users may also modify their license policy's allow and warn lists by using [package URLs](https://github.com/package-url/purl-spec) (aka PURLs), which support glob patterns to allow a range of versions, files and directories, etc.
+     *
+     * purl qualifiers which support globs are `filename`, `version_glob`, `artifact_id` and `license_provenance` (primarily used for allowing data from registry metadata).
+     *
+     * ### Examples:
+     * Allow all license data found in a specific version of a package 4.14.1: `pkg:npm/lodash@4.14.1`
+     * Allow all license data found in a version range of a package: `pkg:npm/lodash?version_glob=15.*`
+     * Allow all license data in the test directory of a given package for certain version ranges: `pkg:npm/lodash@15.*.*?file_name=lodash/test/*`
+     * Allow all license data taken from the package registry for a package and version range: `pkg:npm/lodash?version_glob=*&license_provenance=registry_metadata`
+     *
+     * ## Available options
+     *
+     * `toplevelOnly`: only apply the license policy to "top level" license data in a package, which includes registry metadata, LICENSE files, and manifest files which are closest to the root of the package.
+     *
+     * `applyToUnidentified`: Apply license policy to found but unidentified license data. If enabled, the license policy will be applied to license data which could not be affirmatively identified as a known license (this will effectively merge the license policy violation and unidentified license alerts). If disabled, license policy alerts will only be shown for license data which is positively identified as something not allowed or set to warn by the license policy.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     */
+    post: operations["licenseMetadata"];
+  };
+  "/alert-types": {
+    /**
+     * Alert Types Metadata
+     * @description For an array of alert type identifiers, returns metadata for each alert type. Optionally, specify a language via the 'language' query parameter.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     */
+    post: operations["alertTypes"];
+  };
   "/orgs/{org_slug}/audit-log": {
     /**
      * Get Audit Log Events
@@ -99,6 +432,17 @@ export interface paths {
      * Export CycloneDX SBOM (Beta)
      * @description Export a Socket SBOM as a CycloneDX SBOM
      *
+     * Supported ecosystems:
+     *
+     * - go
+     * - maven
+     * - npm
+     * - pypi
+     * - spdx
+     * - cdx
+     *
+     * Unsupported ecosystems are filtered from the export.
+     *
      * This endpoint consumes 1 unit of your quota.
      *
      * This endpoint requires the following org token scopes:
@@ -110,6 +454,17 @@ export interface paths {
     /**
      * Export SPDX SBOM (Beta)
      * @description Export a Socket SBOM as a SPDX SBOM
+     *
+     * Supported ecosystems:
+     *
+     * - go
+     * - maven
+     * - npm
+     * - pypi
+     * - spdx
+     * - cdx
+     *
+     * Unsupported ecosystems are filtered from the export.
      *
      * This endpoint consumes 1 unit of your quota.
      *
@@ -133,6 +488,10 @@ export interface paths {
      * Create full scan
      * @description Create a full scan from a set of package manifest files. Returns a full scan including all SBOM artifacts.
      *
+     * To get a list of supported filetypes that can be uploaded in a full-scan, see the [Get supported file types](/reference/getsupportedfiles) endpoint.
+     *
+     * The maximum number of files you can upload at a time is 5000 and each file can be no bigger than 16.8 MB.
+     *
      * This endpoint consumes 1 unit of your quota.
      *
      * This endpoint requires the following org token scopes:
@@ -144,6 +503,9 @@ export interface paths {
     /**
      * Stream full scan
      * @description Stream all SBOM artifacts for a full scan.
+     *
+     * This endpoint returns the latest, available alert data for artifacts in the full scan (stale while revalidate).
+     * Actively running analysis will be returned when available on subsequent runs.
      *
      * This endpoint consumes 1 unit of your quota.
      *
@@ -173,6 +535,115 @@ export interface paths {
      * - full-scans:list
      */
     get: operations["getOrgFullScanMetadata"];
+  };
+  "/orgs/{org_slug}/full-scans/diff": {
+    /**
+     * Diff Full Scans
+     * @deprecated
+     * @description **This endpoint is deprecated.**
+     *
+     * Get the difference between two existing Full Scans. The results are not persisted.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - full-scans:list
+     */
+    get: operations["GetOrgDiffScan"];
+  };
+  "/orgs/{org_slug}/full-scans/diff/gfm": {
+    /**
+     * SCM Comment for Scan Diff
+     * @deprecated
+     * @description **This endpoint is deprecated.**
+     *
+     * Get the dependency overview and dependency alert comments in GitHub flavored markdown between the diff between two existing full scans.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - full-scans:list
+     */
+    get: operations["GetOrgFullScanDiffGfm"];
+  };
+  "/orgs/{org_slug}/diff-scans": {
+    /**
+     * List diff scans
+     * @description Returns a paginated list of all diff scans in an organization.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - diff-scans:list
+     */
+    get: operations["listOrgDiffScans"];
+  };
+  "/orgs/{org_slug}/diff-scans/{diff_scan_id}": {
+    /**
+     * Get diff scan
+     * @description Get the difference between two full scans from an existing diff scan resource.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - diff-scans:list
+     */
+    get: operations["getDiffScanById"];
+    /**
+     * Delete diff scan
+     * @description Delete an existing diff scan.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - diff-scans:delete
+     */
+    delete: operations["deleteOrgDiffScan"];
+  };
+  "/orgs/{org_slug}/diff-scans/{diff_scan_id}/gfm": {
+    /**
+     * SCM Comment for Diff Scan
+     * @description Get the dependency overview and dependency alert comments in GitHub flavored markdown for an existing diff scan.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - diff-scans:list
+     */
+    get: operations["GetDiffScanGfm"];
+  };
+  "/orgs/{org_slug}/diff-scans/from-repo/{repo_slug}": {
+    /**
+     * Create diff scan from repository HEAD full-scan
+     * @description Create a diff scan between the repository's current HEAD full scan and a new full scan from uploaded manifest files.
+     * Returns metadata about the diff scan. Once the diff scan is created, fetch the diff scan from
+     * the [api_url](/reference/getDiffScanById) URL to get the contents of the diff.
+     *
+     * The maximum number of files you can upload at a time is 5000 and each file can be no bigger than 16.8 MB.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     *       - repo:list
+     * - diff-scans:create
+     * - full-scans:create
+     */
+    post: operations["createOrgRepoDiff"];
+  };
+  "/orgs/{org_slug}/diff-scans/from-ids": {
+    /**
+     * Create diff scan from full scan IDs
+     * @description Create a diff scan from two existing full scan IDs. The full scans must be in the same repository.
+     * Returns metadata about the diff scan. Once the diff scan is created, fetch the diff scan from
+     * the [api_url](/reference/getDiffScanById) URL to get the contents of the diff.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     *       - diff-scans:create
+     * - full-scans:list
+     */
+    post: operations["createOrgDiffScanFromIds"];
   };
   "/orgs/{org_slug}/repos": {
     /**
@@ -230,10 +701,495 @@ export interface paths {
      */
     delete: operations["deleteOrgRepo"];
   };
+  "/orgs/{org_slug}/repos/labels/{label_id}/associate": {
+    /**
+     * Associate repository label (beta)
+     * @description Associate a repository label with a repository.
+     *
+     * Labels can be used to group and organize repositories and to apply security/license policies.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:update
+     */
+    post: operations["associateOrgRepoLabel"];
+  };
+  "/orgs/{org_slug}/repos/labels": {
+    /**
+     * List repository labels (beta)
+     * @description Lists repository labels for the specified organization.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:list
+     */
+    get: operations["getOrgRepoLabelList"];
+    /**
+     * Create repository label (beta)
+     * @description Create a repository label.
+     *
+     * Labels can be used to group and organize repositories and to apply security/license policies.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:create
+     */
+    post: operations["createOrgRepoLabel"];
+  };
+  "/orgs/{org_slug}/repos/labels/{label_id}": {
+    /**
+     * Get repository label (beta)
+     * @description Retrieve a repository label associated with an organization and label ID.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:list
+     */
+    get: operations["getOrgRepoLabel"];
+    /**
+     * Update repository label (beta)
+     * @description Update a repository label name.
+     *
+     * Labels can be used to group and organize repositories and to apply security/license policies.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:update
+     */
+    put: operations["updateOrgRepoLabel"];
+    /**
+     * Delete repository label (beta)
+     * @description Delete a repository label and all of its associations (repositories, security policy, license policy, etc.).
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:delete
+     */
+    delete: operations["deleteOrgRepoLabel"];
+  };
+  "/orgs/{org_slug}/repos/labels/{label_id}/label-setting": {
+    /**
+     * Get repository label setting (beta)
+     * @description Retrieve the setting (e.g. security/license policy) for a repository label.
+     *
+     *
+     * Note that repository label settings currently only support `issueRules`
+     * and `issueRulesPolicyDefault`. A policy is considered "active" for
+     * a given repository label if the `issueRulesPolicyDefault` is set,
+     * and inactive when not set. `issueRules` can be used to further
+     * refine the alert triage strategy.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:list
+     */
+    get: operations["getOrgRepoLabelSetting"];
+    /**
+     * Update repository label setting (beta)
+     * @description Update the setting (e.g. security/license policy) for a repository label.
+     *
+     *
+     * Note that repository label settings currently only support `issueRules`
+     * and `issueRulesPolicyDefault`. A policy is considered "active" for
+     * a given repository label if the `issueRulesPolicyDefault` is set,
+     * and inactive when not set. `issueRules` can be used to further
+     * refine the alert triage strategy.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:update
+     */
+    put: operations["updateOrgRepoLabelSetting"];
+    /**
+     * Delete repository label setting (beta)
+     * @description Delete the setting (e.g. security/license policy) for a repository label.
+     *
+     *
+     * Note that repository label settings currently only support `issueRules`
+     * and `issueRulesPolicyDefault`. A policy is considered "active" for
+     * a given repository label if the `issueRulesPolicyDefault` is set,
+     * and inactive when not set. `issueRules` can be used to further
+     * refine the alert triage strategy.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:update
+     */
+    delete: operations["deleteOrgRepoLabelSetting"];
+  };
+  "/orgs/{org_slug}/repos/labels/{label_id}/disassociate": {
+    /**
+     * Disassociate repository label (beta)
+     * @description Disassociate a repository label from a repository.
+     *
+     * Labels can be used to group and organize repositories and to apply security/license policies.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - repo-label:update
+     */
+    post: operations["disassociateOrgRepoLabel"];
+  };
+  "/orgs/{org_slug}/triage/alerts": {
+    /**
+     * List Org Alert Triage
+     * @description Get alert triage actions for an organization.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - triage:alerts-list
+     */
+    get: operations["getOrgTriage"];
+    /**
+     * Update Org Alert Triage
+     * @description Update triage actions on organizaton alerts.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - triage:alerts-update
+     */
+    post: operations["updateOrgAlertTriage"];
+  };
+  "/orgs/{org_slug}/api-tokens": {
+    /**
+     * List API Tokens
+     * @description List all API Tokens.
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - api-tokens:list
+     */
+    get: operations["getAPITokens"];
+    /**
+     * Create API Token
+     * @description Create an API Token. The API Token created must use a subset of permissions the API token creating them.
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - api-tokens:create
+     */
+    post: operations["postAPIToken"];
+  };
+  "/orgs/{org_slug}/api-tokens/update": {
+    /**
+     * Update API Token
+     * @description Update an API Token. The API Token created must use a subset of permissions the API token creating them.
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - api-tokens:create
+     */
+    post: operations["postAPITokenUpdate"];
+  };
+  "/orgs/{org_slug}/api-tokens/rotate": {
+    /**
+     * Rotate API Token
+     * @description Rotate an API Token
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - api-tokens:rotate
+     */
+    post: operations["postAPITokensRotate"];
+  };
+  "/orgs/{org_slug}/api-tokens/revoke": {
+    /**
+     * Revoke API Token
+     * @description Revoke an API Token
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - api-tokens:revoke
+     */
+    post: operations["postAPITokensRevoke"];
+  };
+  "/orgs/{org_slug}/settings/integrations/{integration_id}/events": {
+    /**
+     * Get integration events
+     * @description This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - integration:list
+     */
+    get: operations["getIntegrationEvents"];
+  };
+  "/orgs/{org_slug}/settings/security-policy": {
+    /**
+     * Get Organization Security Policy
+     * @description Retrieve the security policy of an organization.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - security-policy:read
+     */
+    get: operations["getOrgSecurityPolicy"];
+    /**
+     * Update Security Policy
+     * @description Update the security policy of an organization.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - security-policy:update
+     */
+    post: operations["updateOrgSecurityPolicy"];
+  };
+  "/orgs/{org_slug}/settings/license-policy": {
+    /**
+     * Get Organization License Policy
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/viewlicensepolicy) for more information. Use the [successor version](/v0/orgs/{org_slug}/settings/license-policy/view) instead.
+     *
+     * Retrieve the license policy of an organization.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - license-policy:read
+     */
+    get: operations["getOrgLicensePolicy"];
+    /**
+     * Update License Policy
+     * @description Set the organization's license policy
+     *
+     *
+     * ## License policy schema
+     *
+     * ```json
+     * {
+     *   allow?: Array<string>
+     *   warn?: Array<string>
+     *   options?: Array<string>
+     * }
+     * ```
+     *
+     * Elements of the `allow` and `warn` arrays strings representing items which should be allowed, or which should trigger a warning; license data found in pacakge which not present in either array will produce a license violation (effectively a "hard" error). For example, to allow Apache-2.0 and MIT to the allow list, simply add the strings "Apache-2.0" and "MIT" to the `allow` array. Strings appearing in these arrays are generally "what you see is what you get", with two important exceptions: strings which are recognized as license classes and strings which are recognized as PURLs are handled differently to allow for more flexible license policy creation.
+     *
+     * ## License Classes
+     *
+     * Strings which are license classes will expand to a list of licenses known to be in that particular license class. Recognized license classes are:
+     *   'permissive',
+     *   'permissive (model)',
+     *   'permissive (gold)',
+     *   'permissive (silver)',
+     *   'permissive (bronze)',
+     *   'permissive (lead)',
+     *   'copyleft',
+     *   'maximal copyleft',
+     *   'network copyleft',
+     *   'strong copyleft',
+     *   'weak copyleft',
+     *   'contributor license agreement',
+     *   'public domain',
+     *   'proprietary free',
+     *   'source available',
+     *   'proprietary',
+     *   'commercial',
+     *   'patent'
+     *
+     * Users can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+     *
+     *
+     * ## PURLs
+     *
+     * Users may also modify their license policy's allow and warn lists by using [package URLs](https://github.com/package-url/purl-spec) (aka PURLs), which support glob patterns to allow a range of versions, files and directories, etc.
+     *
+     * purl qualifiers which support globs are `filename`, `version_glob`, `artifact_id` and `license_provenance` (primarily used for allowing data from registry metadata).
+     *
+     * ### Examples:
+     * Allow all license data found in a specific version of a package 4.14.1: `pkg:npm/lodash@4.14.1`
+     * Allow all license data found in a version range of a package: `pkg:npm/lodash?version_glob=15.*`
+     * Allow all license data in the test directory of a given package for certain version ranges: `pkg:npm/lodash@15.*.*?file_name=lodash/test/*`
+     * Allow all license data taken from the package registry for a package and version range: `pkg:npm/lodash?version_glob=*&license_provenance=registry_metadata`
+     *
+     * ## Available options
+     *
+     * `toplevelOnly`: only apply the license policy to "top level" license data in a package, which includes registry metadata, LICENSE files, and manifest files which are closest to the root of the package.
+     *
+     * `applyToUnidentified`: Apply license policy to found but unidentified license data. If enabled, the license policy will be applied to license data which could not be affirmatively identified as a known license (this will effectively merge the license policy violation and unidentified license alerts). If disabled, license policy alerts will only be shown for license data which is positively identified as something not allowed or set to warn by the license policy.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - license-policy:update
+     */
+    post: operations["updateOrgLicensePolicy"];
+  };
+  "/orgs/{org_slug}/settings/license-policy/view": {
+    /**
+     * Get License Policy (Beta)
+     * @description Returns an organization's license policy
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - license-policy:read
+     */
+    get: operations["viewLicensePolicy"];
+  };
+  "/orgs/{org_slug}/historical/alerts": {
+    /**
+     * List historical alerts (Beta)
+     * @description List historical alerts.
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - historical:alerts-list
+     */
+    get: operations["historicalAlertsList"];
+  };
+  "/orgs/{org_slug}/historical/alerts/trend": {
+    /**
+     * Trend of historical alerts (Beta)
+     * @description Trend analytics of historical alerts.
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - historical:alerts-trend
+     */
+    get: operations["historicalAlertsTrend"];
+  };
+  "/orgs/{org_slug}/historical/dependencies/trend": {
+    /**
+     * Trend of historical dependencies (Beta)
+     * @description Trend analytics of historical dependencies.
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - historical:dependencies-trend
+     */
+    get: operations["historicalDependenciesTrend"];
+  };
+  "/orgs/{org_slug}/historical/snapshots": {
+    /**
+     * List details of periodic historical data snapshots (Beta)
+     * @description This API endpoint is used to list the details of historical snapshots.
+     * Snapshots of organization data are taken periodically, and
+     * each historical snapshot record contains high-level overview metrics about the data
+     * that was collected. Other [Historical Data Endpoints](/reference/historical-data-endpoints)
+     * can be used to fetch the raw data associated with each snapshot.
+     *
+     * Historical snapshots contain details and raw data for the following resources:
+     *
+     * - Repositories
+     * - Alerts
+     * - Dependencies
+     * - Artifacts
+     * - Users
+     * - Settings
+     *
+     * Daily snapshot data is bucketed to the nearest day which is described in
+     * more detail at: [Historical Data Endpoints](/reference/historical-data-endpoints)
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - historical:snapshots-list
+     */
+    get: operations["historicalSnapshotsList"];
+    /**
+     * Start historical data snapshot job (Beta)
+     * @description This API endpoint is used to start a historical snapshot job. While
+     * snapshots are typically taken at least once a day, this endpoint can
+     * be used to start an "on demand" snapshot job to ensure the latest
+     * data is collected and stored for historical purposes.
+     *
+     * An historical snapshot will contain details and raw data for the following resources:
+     *
+     * - Repositories
+     * - Alerts
+     * - Dependencies
+     * - Artifacts
+     * - Users
+     * - Settings
+     *
+     * Historical snapshot data is bucketed to the nearest day which is described in
+     * more detail at: [Historical Data Endpoints](/reference/historical-data-endpoints)
+     *
+     * This endpoint consumes 10 units of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - historical:snapshots-start
+     */
+    post: operations["historicalSnapshotsStart"];
+  };
+  "/orgs/{org_slug}/supported-files": {
+    /**
+     * Get supported file types
+     * @description Get a list of supported files for full scan generation.
+     * Files are categorized first by environment (e.g. NPM or PyPI), then by name.
+     *
+     * Files whose names match the patterns returned by this endpoint can be uploaded for report generation.
+     * Examples of supported filenames include `package.json`, `package-lock.json`, and `yarn.lock`.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - No Scopes Required, but authentication is required
+     */
+    get: operations["getSupportedFiles"];
+  };
+  "/threat-feed": {
+    /**
+     * Get Threat Feed Items (Deprecated)
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/getorgthreatfeeditems) for more information. Use the [successor version](/v0/orgs/{org_slug}/threat-feed) instead.
+     *
+     * Paginated list of threat feed items.
+     *
+     * This endpoint requires an Enterprise Plan with Threat Feed add-on. [Contact](https://socket.dev/demo?utm_source=api-docs&utm_medium=referral&utm_campaign=tracking) our sales team for more details.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - threat-feed:list
+     */
+    get: operations["getThreatFeedItems"];
+  };
+  "/orgs/{org_slug}/threat-feed": {
+    /**
+     * Get Threat Feed Items (Beta)
+     * @description Paginated list of threats, sorted by updated_at by default. Set updated_after to the unix timestamp of your last sync while sorting by updated_at to synchronize all new or updated threats in the feed.
+     *
+     * This endpoint requires an Enterprise Plan with Threat Feed add-on. [Contact](https://socket.dev/demo?utm_source=api-docs&utm_medium=referral&utm_campaign=tracking) our sales team for more details.
+     *
+     * This endpoint consumes 1 unit of your quota.
+     *
+     * This endpoint requires the following org token scopes:
+     * - threat-feed:list
+     */
+    get: operations["getOrgThreatFeedItems"];
+  };
   "/analytics/org/{filter}": {
     /**
      * Get organization analytics (unstable)
-     * @description Get analytics data regarding the number of alerts found across all active repositories.
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/historicalalertstrend) for more information. Use the [successor version](/v0/orgs/{org_slug}/historical/alerts/trend) instead.
+     *
+     * Please implement against the [Historical dependencies](/reference/historicaldependenciestrend) or [Historical alerts](/reference/historicalalertstrend) endpoints.
+     *
+     * Get analytics data regarding the number of alerts found across all active repositories.
      *
      * This endpoint consumes 1 unit of your quota.
      *
@@ -245,7 +1201,12 @@ export interface paths {
   "/analytics/repo/{name}/{filter}": {
     /**
      * Get repository analytics
-     * @description Get analytics data regarding the number of alerts found in a single repository.
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/historicalalertstrend) for more information. Use the [successor version](/v0/orgs/{org_slug}/historical/alerts/trend) instead.
+     *
+     * Please implement against the [Historical dependencies](/reference/historicaldependenciestrend) or [Historical alerts](/reference/historicalalertstrend) endpoints.
+     *
+     * Get analytics data regarding the number of alerts found in a single repository.
      *
      * This endpoint consumes 1 unit of your quota.
      *
@@ -262,14 +1223,17 @@ export interface paths {
      * This endpoint consumes 1 unit of your quota.
      *
      * This endpoint requires the following org token scopes:
-     * - Any
+     * - No Scopes Required, but authentication is required
      */
     post: operations["searchDependencies"];
   };
   "/dependencies/upload": {
     /**
      * Create a snapshot of all dependencies from manifest information
-     * @description Upload a set of manifest or lockfiles to get your dependency tree analyzed by Socket.
+     * @deprecated
+     * @description **This endpoint is deprecated.**
+     *
+     * Upload a set of manifest or lockfiles to get your dependency tree analyzed by Socket.
      * You can upload multiple lockfiles in the same request, but each filename must be unique.
      *
      * The name of the file must be in the supported list.
@@ -286,7 +1250,12 @@ export interface paths {
   "/report/supported": {
     /**
      * Get supported files for report
-     * @description Get a list of supported files for project report generation.
+     * @deprecated
+     * @description **This endpoint is deprecated.** Deprecated since 2023-01-15. See [deprecation documentation](https://docs.socket.dev/reference/getsupportedfiles) for more information. Use the [successor version](/v0/orgs/{org_slug}/supported-files) instead.
+     *
+     * This route has been moved to the `orgs/{org_slug}/supported-files` endpoint.
+     *
+     * Get a list of supported files for project report generation.
      * Files are categorized first by environment (e.g. NPM or PyPI), then by name.
      *
      * Files whose names match the patterns returned by this endpoint can be uploaded for report generation.
@@ -301,7 +1270,10 @@ export interface paths {
   "/report/delete/{id}": {
     /**
      * Delete a report
-     * @description Delete a specific project report generated with the GitHub app. These endpoints will be merged into the full-scans endpoint so
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference) for more information. Use the [successor version](/v0/orgs/{org_slug}/full-scans) instead.
+     *
+     * Deprecated: Use `/orgs/{org_slug}/full-scans` instead. Delete a specific project report generated with the GitHub app.
      *
      * This endpoint consumes 10 units of your quota.
      *
@@ -313,7 +1285,10 @@ export interface paths {
   "/report/list": {
     /**
      * Get list of reports
-     * @description Get all your project reports generated with the GitHub app. This endpoint will be merged into the full-scans endpoint soon.
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference) for more information. Use the [successor version](/v0/orgs/{org_slug}/full-scans) instead.
+     *
+     * Deprecated: Use `/orgs/{org_slug}/full-scans` instead. Get all your project reports generated with the GitHub app.
      *
      * This endpoint consumes 10 units of your quota.
      *
@@ -325,7 +1300,12 @@ export interface paths {
   "/report/upload": {
     /**
      * Create a report
-     * @description Upload a lockfile to get your project analyzed by Socket.
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/createorgfullscan) for more information. Use the [successor version](/v0/orgs/{org_slug}/full-scans) instead.
+     *
+     * Deprecated: Use `/orgs/{org_slug}/full-scans` instead.
+     *
+     * Upload a lockfile to get your project analyzed by Socket.
      * You can upload multiple lockfiles in the same request, but each filename must be unique.
      *
      * The name of the file must be in the supported list.
@@ -342,7 +1322,10 @@ export interface paths {
   "/report/view/{id}": {
     /**
      * View a report
-     * @description Get all the issues, packages, and scores related to an specific project report.
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/getorgfullscan) for more information. Use the [successor version](/v0/orgs/{org_slug}/full-scans/{full_scan_id}) instead.
+     *
+     * Deprecated: Use `/orgs/{org_slug}/full-scans` instead. Get all the issues, packages, and scores related to an specific project report.
      *
      * This endpoint consumes 10 units of your quota.
      *
@@ -355,7 +1338,9 @@ export interface paths {
     /**
      * List GitHub repositories
      * @deprecated
-     * @description Get all GitHub repositories associated with a Socket org.
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/getorgrepolist) for more information. Use the [successor version](/v0/orgs/{org_slug}/repos) instead.
+     *
+     * Deprecated: Use `/orgs/{org_slug}/repos` instead. Get all GitHub repositories associated with a Socket org.
      *
      * This endpoint consumes 1 unit of your quota.
      *
@@ -383,31 +1368,34 @@ export interface paths {
      * This endpoint consumes 0 units of your quota.
      *
      * This endpoint requires the following org token scopes:
-     * - Any
+     * - No Scopes Required, but authentication is required
      */
     get: operations["getQuota"];
   };
   "/organizations": {
     /**
      * List organizations
-     * @description Get information on the current organizations associated with the API key.
+     * @description Get information on the current organizations associated with the API token.
      *
      * This endpoint consumes 1 unit of your quota.
      *
      * This endpoint requires the following org token scopes:
-     * - Any
+     * - No Scopes Required, but authentication is required
      */
     get: operations["getOrganizations"];
   };
   "/settings": {
     /**
      * Calculate settings
-     * @description Get your current settings the requested organizations and default settings to allow deferrals.
+     * @deprecated
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/updateorgsecuritypolicy) for more information. Use the [successor version](/v0/orgs/{org_slug}/settings/security-policy) instead.
+     *
+     * Get current settings for the requested organizations and default settings to allow deferrals.
      *
      * This endpoint consumes 1 unit of your quota.
      *
      * This endpoint requires the following org token scopes:
-     * - Any
+     * - No Scopes Required, but authentication is required
      */
     post: operations["postSettings"];
   };
@@ -415,15 +1403,17 @@ export interface paths {
     /**
      * Get issues by package
      * @deprecated
-     * @description Get all the issues related with a particular npm package version.
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference) for more information. Use the [successor version](/v0/purl/{purl}/issues) instead.
+     *
+     * Get all the issues related with a particular npm package version.
      * This endpoint returns the issue type, location, and additional details related to each issue in the `props` attribute.
      *
-     * You can [see here](https://socket.dev/npm/issue) the full list of issues.
+     * You can [see here](https://socket.dev/alerts) the full list of issues.
      *
      * This endpoint consumes 1 unit of your quota.
      *
      * This endpoint requires the following org token scopes:
-     * - Any
+     * - No Scopes Required, but authentication is required
      */
     get: operations["getIssuesByNPMPackage"];
   };
@@ -431,9 +1421,9 @@ export interface paths {
     /**
      * Get score by package
      * @deprecated
-     * @description Get all the scores and metrics by category that are used to evaluate the package version.
+     * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/batchpackagefetch) for more information. Use the [successor version](/v0/purl) instead.
      *
-     * This endpoint is deprecated. Use the batched "Get Packages" endpoint instead.
+     * Get all the scores and metrics by category that are used to evaluate the package version.
      *
      * - depscore: The average of all score factors. (0-1)
      * - supplyChainRisk: Score factors relating to supply chain security (0-1)
@@ -468,7 +1458,7 @@ export interface paths {
      * This endpoint consumes 1 unit of your quota.
      *
      * This endpoint requires the following org token scopes:
-     * - Any
+     * - No Scopes Required, but authentication is required
      */
     get: operations["getScoreByNPMPackage"];
   };
@@ -479,22 +1469,48 @@ export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
     SocketArtifact: components["schemas"]["SocketPURL"] & components["schemas"]["SocketArtifactLink"] & {
-      id: components["schemas"]["SocketId"];
+      id?: components["schemas"]["SocketId"];
+      /** @description List of package authors or maintainers */
+      author?: string[];
+      /**
+       * @description Total size of the package artifact in bytes
+       * @default 0
+       */
+      size?: number;
+      /**
+       * @description Hugging Face model, dataset, or space type
+       * @default
+       */
+      repositoryType?: string;
+      alerts?: components["schemas"]["SocketAlert"][];
+      score?: components["schemas"]["SocketScore"];
+      /**
+       * @description Index position of this artifact within its processing batch, used for ordering and pagination
+       * @default 0
+       */
+      batchIndex?: number;
       /** @default */
       license?: string;
       licenseDetails?: components["schemas"]["LicenseDetails"];
       licenseAttrib?: components["schemas"]["SAttrib1_N"];
-      author?: string[];
-      /** @default 0 */
-      size?: number;
-      score?: components["schemas"]["SocketScore"];
-      alerts?: components["schemas"]["SocketAlert"][];
-      /** @default 0 */
-      batchIndex?: number;
     };
     SocketBatchPURLFetch: {
       components: components["schemas"]["SocketBatchPURLRequest"][];
     };
+    /** @default null */
+    LicenseAllowListRequest: Record<string, never>;
+    LicensePolicy: {
+      allow: components["schemas"]["LicenseAllowListElabbed"];
+      warn: components["schemas"]["LicenseAllowListElabbed"];
+      monitor: components["schemas"]["LicenseAllowListElabbed"];
+    };
+    LicenseAllowList: {
+      strings: string[];
+    };
+    /** @default null */
+    SLicenseMetaRes: Record<string, never>;
+    /** @default null */
+    SLicenseMetaReq: Record<string, never>;
     CDXManifestSchema: {
       /** @default CycloneDX */
       bomFormat: string;
@@ -539,6 +1555,76 @@ export interface components {
           /** @default */
           ref: string;
           dependsOn?: string[];
+        }[];
+      vulnerabilities?: {
+          /** @default */
+          ref: string;
+          /** @default */
+          id: string;
+          source?: {
+            /** @default */
+            name?: string;
+            /** @default */
+            url?: string;
+          };
+          ratings?: {
+              source?: {
+                /** @default */
+                name?: string;
+                /** @default */
+                url?: string;
+              };
+              /** @default 0 */
+              score?: number;
+              /** @default */
+              severity?: string;
+              /** @default */
+              method?: string;
+              /** @default */
+              vector?: string;
+            }[];
+          cwes?: number[];
+          /** @default */
+          description?: string;
+          /** @default */
+          detail?: string;
+          /** @default */
+          recommendation?: string;
+          advisories?: {
+              /** @default */
+              url: string;
+              /** @default */
+              title?: string;
+            }[];
+          /** @default */
+          created?: string;
+          /** @default */
+          published?: string;
+          /** @default */
+          updated?: string;
+          affects?: {
+              /** @default */
+              ref: string;
+              versions?: {
+                  /** @default */
+                  version?: string;
+                  /** @default */
+                  status?: string;
+                }[];
+            }[];
+          analysis?: {
+            /** @default */
+            state?: string;
+            /** @default */
+            justification?: string;
+            response?: string[];
+            /** @default */
+            detail?: string;
+            /** @default */
+            firstIssued?: string;
+            /** @default */
+            lastUpdated?: string;
+          };
         }[];
     };
     SPDXManifestSchema: {
@@ -603,6 +1689,119 @@ export interface components {
           relationshipType: string;
         }[];
     };
+    SocketDiffArtifact: components["schemas"]["SocketPURL"] & {
+      diffType: components["schemas"]["SocketDiffArtifactType"];
+      id?: components["schemas"]["SocketId"];
+      /** @description List of package authors or maintainers */
+      author?: string[];
+      /** @description Artifact links from the base/before state */
+      base?: components["schemas"]["SocketArtifactLink"][];
+      capabilities?: components["schemas"]["Capabilities"];
+      /** @description Artifact links from the head/after state */
+      head?: components["schemas"]["SocketArtifactLink"][];
+      qualifiers?: components["schemas"]["Qualifiers"];
+      /**
+       * @description Total size of the package artifact in bytes
+       * @default 0
+       */
+      size?: number;
+      /** @default */
+      license?: string;
+      licenseDetails?: components["schemas"]["LicenseDetails"];
+      licenseAttrib?: components["schemas"]["SAttrib1_N"];
+      score?: components["schemas"]["SocketScore"];
+      alerts?: components["schemas"]["SocketAlert"][];
+    };
+    SStoredLicensePolicy: {
+      allow: string[] | null;
+      warn: string[] | null;
+      monitor: string[] | null;
+      options: string[] | null;
+    };
+    Capabilities: {
+      /**
+       * @description Package can read or modify environment variables
+       * @default false
+       */
+      env: boolean;
+      /**
+       * @description Package uses dynamic code evaluation (eval, Function constructor, etc.)
+       * @default false
+       */
+      eval: boolean;
+      /**
+       * @description Package can read or write to the file system
+       * @default false
+       */
+      fs: boolean;
+      /**
+       * @description Package can make network requests or create servers
+       * @default false
+       */
+      net: boolean;
+      /**
+       * @description Package can execute shell commands or spawn processes
+       * @default false
+       */
+      shell: boolean;
+      /**
+       * @description Package uses unsafe or dangerous operations that could compromise security
+       * @default false
+       */
+      unsafe: boolean;
+    };
+    Qualifiers: unknown;
+    SocketScore: {
+      /**
+       * @description Score from 0.0 to 1.0 evaluating license permissiveness and compatibility
+       * @default 0
+       */
+      license: number;
+      /**
+       * @description Score from 0.0 to 1.0 evaluating project maintenance health and activity
+       * @default 0
+       */
+      maintenance: number;
+      /**
+       * @description Combined score from 0.0 to 1.0 representing overall package health and safety
+       * @default 0
+       */
+      overall: number;
+      /**
+       * @description Score from 0.0 to 1.0 evaluating code quality, testing, and documentation
+       * @default 0
+       */
+      quality: number;
+      /**
+       * @description Score from 0.0 to 1.0 evaluating supply chain security and provenance
+       * @default 0
+       */
+      supplyChain: number;
+      /**
+       * @description Score from 0.0 to 1.0 based on known vulnerabilities and their severity
+       * @default 0
+       */
+      vulnerability: number;
+    };
+    SocketManifestReference: {
+      /**
+       * @description Path to the manifest file (e.g., package.json, pom.xml)
+       * @default
+       */
+      file: string;
+      /**
+       * @description Starting line or position in the manifest file
+       * @default 0
+       */
+      start?: number;
+      /**
+       * @description Ending line or position in the manifest file
+       * @default 0
+       */
+      end?: number;
+    };
+    /** @default */
+    SocketId: string;
     SocketReport: {
       /** @default */
       id: string;
@@ -637,85 +1836,281 @@ export interface components {
     };
     SocketPURL: {
       type: components["schemas"]["SocketPURL_Type"];
-      /** @default */
+      /**
+       * @description Package namespace or scope, such as npm organizations (@angular), Maven groupIds, or Docker image owners
+       * @default
+       */
       namespace?: string;
-      /** @default */
+      /**
+       * @description Package name within its ecosystem
+       * @default
+       */
       name?: string;
-      /** @default */
+      /**
+       * @description Package version string
+       * @default
+       */
       version?: string;
-      /** @default */
+      /**
+       * @description Path within the package to a specific file or directory, used to reference nested components
+       * @default
+       */
       subpath?: string;
-      /** @default */
+      /**
+       * @description Package-specific release identifier, such as PyPI's artifact ID or the specific build/release version
+       * @default
+       */
       release?: string;
     };
-    /** @default */
-    SocketId: string;
-    SocketArtifactLink: {
-      /** @default false */
-      direct?: boolean;
-      manifestFiles?: components["schemas"]["SocketManifestReference"][];
-      topLevelAncestors?: components["schemas"]["SocketId"][];
-      dependencies?: components["schemas"]["SocketId"][];
-      artifact?: components["schemas"]["SocketPURL"] & {
-        id: components["schemas"]["SocketId"];
+    SocketAlert: {
+      /**
+       * @description Unique identifier for this alert instance, used for deduplication and tracking across scans
+       * @default
+       */
+      key: string;
+      /**
+       * @description Alert type identifier referencing the alert type definition
+       * @default
+       */
+      type: string;
+      severity?: components["schemas"]["SocketIssueSeverity"];
+      category?: components["schemas"]["SocketCategory"];
+      /**
+       * @description File path where this alert was detected
+       * @default
+       */
+      file?: string;
+      /**
+       * @description Starting position of the alert in the file
+       * @default 0
+       */
+      start?: number;
+      /**
+       * @description Ending position of the alert in the file
+       * @default 0
+       */
+      end?: number;
+      /**
+       * @description Additional alert-specific properties and metadata that vary by alert type
+       * @default null
+       */
+      props?: Record<string, never>;
+      /**
+       * @description Action to take for this alert (e.g., error, warn, ignore)
+       * @default
+       */
+      action?: string;
+      actionSource?: {
+        /**
+         * @description Type of action source (e.g., policy, override)
+         * @default
+         */
+        type: string;
+        candidates: {
+            /**
+             * @description Type of action candidate
+             * @default
+             */
+            type: string;
+            /**
+             * @description Proposed action for this candidate
+             * @default
+             */
+            action: string;
+            /**
+             * @description Index of the policy rule for this candidate
+             * @default 0
+             */
+            actionPolicyIndex: number;
+            /**
+             * @description Repository label ID associated with this candidate
+             * @default
+             */
+            repoLabelId: string;
+          }[];
+      };
+      /**
+       * @description Index of the policy rule that triggered this action, for traceability to security policies
+       * @default 0
+       */
+      actionPolicyIndex?: number;
+      fix?: {
+        /**
+         * @description Type of fix available (e.g., upgrade, remove, cve)
+         * @default
+         */
+        type: string;
+        /**
+         * @description Human-readable description of how to fix this issue
+         * @default
+         */
+        description: string;
+      };
+      reachability?: {
+        head?: components["schemas"]["ReachabilityResult"];
+        base?: components["schemas"]["ReachabilityResult"];
       };
     };
     LicenseDetails: {
-        /** @default */
+        /**
+         * @description SPDX license expression in disjunctive normal form (e.g., '(MIT OR Apache-2.0)')
+         * @default
+         */
         spdxDisj: string;
-        /** @default */
+        /** @description List of authors found in the license text */
+        authors: string[];
+        /**
+         * @description Error details if license parsing failed
+         * @default
+         */
+        errorData: string;
+        /**
+         * @description Source where this license information was detected (e.g., 'package.json', 'LICENSE file', 'README')
+         * @default
+         */
         provenance: string;
-        /** @default */
+        /**
+         * @description Path to the file containing this license information
+         * @default
+         */
         filepath: string;
-        /** @default 0 */
+        /**
+         * @description Confidence score from 0.0 to 1.0 indicating how well the detected license matches the source text
+         * @default 0
+         */
         match_strength: number;
       }[];
     SAttrib1_N: {
-        /** @default */
+        /**
+         * @description Full text of the license attribution or copyright notice found in the package
+         * @default
+         */
         attribText: string;
         attribData: {
-            /** @default */
+            /**
+             * @description Package URL this attribution applies to
+             * @default
+             */
             purl: string;
-            /** @default */
+            /**
+             * @description File path where this attribution was found
+             * @default
+             */
             foundInFilepath: string;
-            /** @default */
+            /**
+             * @description SPDX license expression parsed from the attribution text
+             * @default
+             */
             spdxExpr: string;
+            /** @description Authors mentioned in this attribution */
             foundAuthors: string[];
           }[];
       }[];
-    SocketScore: {
-      /** @default 0 */
-      supplyChain: number;
-      /** @default 0 */
-      quality: number;
-      /** @default 0 */
-      maintenance: number;
-      /** @default 0 */
-      vulnerability: number;
-      /** @default 0 */
-      license: number;
-      /** @default 0 */
-      overall: number;
-    };
-    SocketAlert: {
-      /** @default */
-      key: string;
-      /** @default */
-      type: string;
-      severity: components["schemas"]["SocketIssueSeverity"];
-      category: components["schemas"]["SocketCategory"];
-      /** @default */
-      file?: string;
-      /** @default 0 */
-      start?: number;
-      /** @default 0 */
-      end?: number;
-      /** @default null */
-      props?: Record<string, never>;
+    SocketArtifactLink: {
+      /**
+       * @description Indicates if this is a direct dependency (not transitive)
+       * @default false
+       */
+      direct?: boolean;
+      /**
+       * @description Indicates if this is a development-only dependency not used in production
+       * @default false
+       */
+      dev?: boolean;
+      /**
+       * @description Indicates if this package is deprecated, abandoned, or no longer maintained
+       * @default false
+       */
+      dead?: boolean;
+      manifestFiles?: components["schemas"]["SocketManifestReference"][];
+      /** @description IDs of the root-level packages in the dependency tree that depend on this package */
+      topLevelAncestors?: components["schemas"]["SocketId"][];
+      /** @description IDs of packages that this package directly depends on */
+      dependencies?: components["schemas"]["SocketId"][];
+      /** @description Computed priority scores for each alert type based on severity, reachability, and fixability factors */
+      alertPriorities?: {
+        [key: string]: {
+          /**
+           * @description Computed priority score for this alert
+           * @default 0
+           */
+          result: number;
+          components?: {
+            isFixable: {
+              /**
+               * @description Contribution of fixability to the priority score
+               * @default 0
+               */
+              result: number;
+              /**
+               * @description Whether a fix is available for this alert
+               * @default false
+               */
+              value: boolean;
+            };
+            isReachable: {
+              /**
+               * @description Contribution of reachability to the priority score
+               * @default 0
+               */
+              result: number;
+              /**
+               * @description Whether the vulnerable code is reachable
+               * @default false
+               */
+              value: boolean;
+              /**
+               * @description Specific reachability type value such as 'unreachable', 'maybe_reachable', or 'reachable'
+               * @default
+               */
+              specificValue: string;
+            };
+            severity: {
+              /**
+               * @description Contribution of severity to the priority score
+               * @default 0
+               */
+              result: number;
+              /**
+               * @description Numeric severity level
+               * @default 0
+               */
+              value: number;
+            };
+          };
+          /**
+           * @description Formula used to calculate the priority score
+           * @default
+           */
+          formula?: string;
+        };
+      };
+      artifact?: components["schemas"]["SocketPURL"] & {
+        id: components["schemas"]["SocketId"];
+      };
+      /** @description Mapping of alert keys to arrays of reachability types found across different manifest files or code locations. Each type indicates whether the vulnerable code is actually used: "reachable" (definitely used), "maybe_reachable" (potentially used), "unreachable" (not used), "unknown" (cannot determine), etc. Multiple types per alert can occur when the same vulnerability appears in different contexts. */
+      alertKeysToReachabilityTypes?: {
+        [key: string]: string[];
+      };
+      /** @description Mapping of alert keys to arrays of reachability summaries. Each summary contains a reachability type and a hash pointing to detailed analysis data (call stacks, file locations, confidence scores). Used for efficient storage and retrieval of comprehensive reachability analysis results without duplicating large analysis payloads. */
+      alertKeysToReachabilitySummaries?: {
+        [key: string]: {
+            /** @default */
+            type: string;
+            /** @default */
+            hash: string;
+          }[];
+      };
     };
     SocketBatchPURLRequest: {
       /** @default */
       purl: string;
+    };
+    LicenseAllowListElabbed: {
+      strings: string[];
+      classes: string[];
+      packageURLs: string[];
+      disjs: string[];
     };
     CDXComponentSchema: {
       /** @default */
@@ -801,210 +2196,62 @@ export interface components {
         }[];
       components?: components["schemas"]["CDXComponentSchema"][];
     };
+    /**
+     * @description Type of change detected for this artifact in the diff
+     * @default unchanged
+     * @enum {string}
+     */
+    SocketDiffArtifactType: "added" | "removed" | "updated" | "replaced" | "unchanged";
     SocketIssue: ({
       /** @enum {string} */
-      type?: "criticalCVE";
+      type?: "gptSecurity";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          cveId: string;
-          cwes: {
-              /** @default */
-              description: string;
-              /** @default */
-              id: string;
-              /** @default */
-              name: string;
-            }[];
-          cvss: {
-            /** @default 0 */
-            score: number;
-            /** @default */
-            vectorString: string;
-          };
-          /** @default */
-          description: string;
-          /** @default */
-          firstPatchedVersionIdentifier: string;
-          /** @default */
-          ghsaId: string;
-          /** @default critical */
-          severity: string;
-          /** @default */
-          title: string;
-          /** @default */
-          url: string;
-          /** @default */
-          vulnerableVersionRange: string;
+          notes: string;
+          /** @default 0 */
+          confidence: number;
+          /** @default 0 */
+          severity: number;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "cve";
-      value?: components["schemas"]["SocketIssueBasics"] & {
+      type?: "gptAnomaly";
+      value?: components["schemas"]["SocketIssueBasics"] & ({
         /** @default */
         description: string;
         props: {
           /** @default */
-          cveId: string;
-          cwes: {
-              /** @default */
-              description: string;
-              /** @default */
-              id: string;
-              /** @default */
-              name: string;
-            }[];
-          cvss: {
-            /** @default 0 */
-            score: number;
-            /** @default */
-            vectorString: string;
-          };
-          /** @default */
-          description: string;
-          /** @default */
-          firstPatchedVersionIdentifier: string;
-          /** @default */
-          ghsaId: string;
-          /** @default critical */
-          severity: string;
-          /** @default */
-          title: string;
-          /** @default */
-          url: string;
-          /** @default */
-          vulnerableVersionRange: string;
+          notes: string;
+          /** @default 0 */
+          confidence: number;
+          /** @default 0 */
+          severity: number;
+          /**
+           * @default medium
+           * @enum {string}
+           */
+          risk: "low" | "medium" | "high";
         };
         usage?: components["schemas"]["SocketUsageRef"];
-      };
+      });
     }) | ({
       /** @enum {string} */
-      type?: "mediumCVE";
+      type?: "gptMalware";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          cveId: string;
-          cwes: {
-              /** @default */
-              description: string;
-              /** @default */
-              id: string;
-              /** @default */
-              name: string;
-            }[];
-          cvss: {
-            /** @default 0 */
-            score: number;
-            /** @default */
-            vectorString: string;
-          };
-          /** @default */
-          description: string;
-          /** @default */
-          firstPatchedVersionIdentifier: string;
-          /** @default */
-          ghsaId: string;
-          /** @default critical */
-          severity: string;
-          /** @default */
-          title: string;
-          /** @default */
-          url: string;
-          /** @default */
-          vulnerableVersionRange: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "mildCVE";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          cveId: string;
-          cwes: {
-              /** @default */
-              description: string;
-              /** @default */
-              id: string;
-              /** @default */
-              name: string;
-            }[];
-          cvss: {
-            /** @default 0 */
-            score: number;
-            /** @default */
-            vectorString: string;
-          };
-          /** @default */
-          description: string;
-          /** @default */
-          firstPatchedVersionIdentifier: string;
-          /** @default */
-          ghsaId: string;
-          /** @default critical */
-          severity: string;
-          /** @default */
-          title: string;
-          /** @default */
-          url: string;
-          /** @default */
-          vulnerableVersionRange: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "installScripts";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          script: string;
-          /** @default */
-          source: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "hasNativeCode";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "binScriptConfusion";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          binScript: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "shellScriptOverride";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          binScript: string;
+          notes: string;
+          /** @default 0 */
+          confidence: number;
+          /** @default 0 */
+          severity: number;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
@@ -1058,7 +2305,457 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "longStrings";
+      type?: "chromePermission";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          permission: string;
+          /** @default */
+          permissionType: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "chromeHostPermission";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          host: string;
+          /** @default */
+          permissionType: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "chromeWildcardHostPermission";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          host: string;
+          /** @default */
+          permissionType: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "chromeContentScript";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          scriptFile: string;
+          /** @default */
+          matches: string;
+          /** @default */
+          runAt: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "criticalCVE";
+      value?: components["schemas"]["SocketIssueBasics"] & ({
+        /** @default */
+        description: string;
+        props: {
+          /**
+           * @description Common Vulnerabilities and Exposures identifier (e.g., CVE-2021-44228)
+           * @default
+           */
+          cveId: string;
+          cwes: {
+              /** @default */
+              description: string;
+              /**
+               * @description Common Weakness Enumeration identifier (e.g., CWE-79)
+               * @default
+               */
+              id: string;
+              /** @default */
+              name: string;
+            }[];
+          /** @description Common Vulnerability Scoring System metrics */
+          cvss: {
+            /**
+             * @description CVSS base score ranging from 0.0 to 10.0
+             * @default 0
+             */
+            score: number;
+            /**
+             * @description CVSS vector string (e.g., CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+             * @default
+             */
+            vectorString: string;
+          };
+          /** @default */
+          description: string;
+          /**
+           * @description The first version that includes a patch for this vulnerability
+           * @default
+           */
+          firstPatchedVersionIdentifier: string;
+          /**
+           * @description GitHub Security Advisory identifier (e.g., GHSA-1234-5678-9abc)
+           * @default
+           */
+          ghsaId: string;
+          /** @default critical */
+          severity: string;
+          /** @default */
+          title: string;
+          /** @default */
+          url: string;
+          /**
+           * @description Version range affected by this vulnerability (e.g., >= 2.0.0, < 2.17.1)
+           * @default
+           */
+          vulnerableVersionRange: string;
+          kevs: (({
+              /** @default */
+              vulnerabilityName: string;
+              /** @default */
+              shortDescription: string | null;
+              /** @default */
+              requiredAction: string | null;
+              /**
+               * @description Date when added to CISA KEV catalog (ISO 8601 format)
+               * @default
+               */
+              dateAdded: string;
+              /**
+               * @description Remediation deadline for federal agencies (ISO 8601 format)
+               * @default
+               */
+              dueDate: string | null;
+              /**
+               * @description Known, Unknown, or specific ransomware campaign names
+               * @default
+               */
+              knownRansomwareCampaignUse: string | null;
+              /** @default */
+              notes: string | null;
+              /** @default */
+              vendorProject: string;
+              /** @default */
+              product: string;
+            })[]) | null;
+          /** @description Exploit Prediction Scoring System https://www.first.org/epss/ */
+          epss: {
+            /** @default 0 */
+            score: number;
+            /** @default 0 */
+            percentile: number;
+          } | null;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      });
+    }) | ({
+      /** @enum {string} */
+      type?: "cve";
+      value?: components["schemas"]["SocketIssueBasics"] & ({
+        /** @default */
+        description: string;
+        props: {
+          /**
+           * @description Common Vulnerabilities and Exposures identifier (e.g., CVE-2021-44228)
+           * @default
+           */
+          cveId: string;
+          cwes: {
+              /** @default */
+              description: string;
+              /**
+               * @description Common Weakness Enumeration identifier (e.g., CWE-79)
+               * @default
+               */
+              id: string;
+              /** @default */
+              name: string;
+            }[];
+          /** @description Common Vulnerability Scoring System metrics */
+          cvss: {
+            /**
+             * @description CVSS base score ranging from 0.0 to 10.0
+             * @default 0
+             */
+            score: number;
+            /**
+             * @description CVSS vector string (e.g., CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+             * @default
+             */
+            vectorString: string;
+          };
+          /** @default */
+          description: string;
+          /**
+           * @description The first version that includes a patch for this vulnerability
+           * @default
+           */
+          firstPatchedVersionIdentifier: string;
+          /**
+           * @description GitHub Security Advisory identifier (e.g., GHSA-1234-5678-9abc)
+           * @default
+           */
+          ghsaId: string;
+          /** @default critical */
+          severity: string;
+          /** @default */
+          title: string;
+          /** @default */
+          url: string;
+          /**
+           * @description Version range affected by this vulnerability (e.g., >= 2.0.0, < 2.17.1)
+           * @default
+           */
+          vulnerableVersionRange: string;
+          kevs: (({
+              /** @default */
+              vulnerabilityName: string;
+              /** @default */
+              shortDescription: string | null;
+              /** @default */
+              requiredAction: string | null;
+              /**
+               * @description Date when added to CISA KEV catalog (ISO 8601 format)
+               * @default
+               */
+              dateAdded: string;
+              /**
+               * @description Remediation deadline for federal agencies (ISO 8601 format)
+               * @default
+               */
+              dueDate: string | null;
+              /**
+               * @description Known, Unknown, or specific ransomware campaign names
+               * @default
+               */
+              knownRansomwareCampaignUse: string | null;
+              /** @default */
+              notes: string | null;
+              /** @default */
+              vendorProject: string;
+              /** @default */
+              product: string;
+            })[]) | null;
+          /** @description Exploit Prediction Scoring System https://www.first.org/epss/ */
+          epss: {
+            /** @default 0 */
+            score: number;
+            /** @default 0 */
+            percentile: number;
+          } | null;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      });
+    }) | ({
+      /** @enum {string} */
+      type?: "mediumCVE";
+      value?: components["schemas"]["SocketIssueBasics"] & ({
+        /** @default */
+        description: string;
+        props: {
+          /**
+           * @description Common Vulnerabilities and Exposures identifier (e.g., CVE-2021-44228)
+           * @default
+           */
+          cveId: string;
+          cwes: {
+              /** @default */
+              description: string;
+              /**
+               * @description Common Weakness Enumeration identifier (e.g., CWE-79)
+               * @default
+               */
+              id: string;
+              /** @default */
+              name: string;
+            }[];
+          /** @description Common Vulnerability Scoring System metrics */
+          cvss: {
+            /**
+             * @description CVSS base score ranging from 0.0 to 10.0
+             * @default 0
+             */
+            score: number;
+            /**
+             * @description CVSS vector string (e.g., CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+             * @default
+             */
+            vectorString: string;
+          };
+          /** @default */
+          description: string;
+          /**
+           * @description The first version that includes a patch for this vulnerability
+           * @default
+           */
+          firstPatchedVersionIdentifier: string;
+          /**
+           * @description GitHub Security Advisory identifier (e.g., GHSA-1234-5678-9abc)
+           * @default
+           */
+          ghsaId: string;
+          /** @default critical */
+          severity: string;
+          /** @default */
+          title: string;
+          /** @default */
+          url: string;
+          /**
+           * @description Version range affected by this vulnerability (e.g., >= 2.0.0, < 2.17.1)
+           * @default
+           */
+          vulnerableVersionRange: string;
+          kevs: (({
+              /** @default */
+              vulnerabilityName: string;
+              /** @default */
+              shortDescription: string | null;
+              /** @default */
+              requiredAction: string | null;
+              /**
+               * @description Date when added to CISA KEV catalog (ISO 8601 format)
+               * @default
+               */
+              dateAdded: string;
+              /**
+               * @description Remediation deadline for federal agencies (ISO 8601 format)
+               * @default
+               */
+              dueDate: string | null;
+              /**
+               * @description Known, Unknown, or specific ransomware campaign names
+               * @default
+               */
+              knownRansomwareCampaignUse: string | null;
+              /** @default */
+              notes: string | null;
+              /** @default */
+              vendorProject: string;
+              /** @default */
+              product: string;
+            })[]) | null;
+          /** @description Exploit Prediction Scoring System https://www.first.org/epss/ */
+          epss: {
+            /** @default 0 */
+            score: number;
+            /** @default 0 */
+            percentile: number;
+          } | null;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      });
+    }) | ({
+      /** @enum {string} */
+      type?: "mildCVE";
+      value?: components["schemas"]["SocketIssueBasics"] & ({
+        /** @default */
+        description: string;
+        props: {
+          /**
+           * @description Common Vulnerabilities and Exposures identifier (e.g., CVE-2021-44228)
+           * @default
+           */
+          cveId: string;
+          cwes: {
+              /** @default */
+              description: string;
+              /**
+               * @description Common Weakness Enumeration identifier (e.g., CWE-79)
+               * @default
+               */
+              id: string;
+              /** @default */
+              name: string;
+            }[];
+          /** @description Common Vulnerability Scoring System metrics */
+          cvss: {
+            /**
+             * @description CVSS base score ranging from 0.0 to 10.0
+             * @default 0
+             */
+            score: number;
+            /**
+             * @description CVSS vector string (e.g., CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+             * @default
+             */
+            vectorString: string;
+          };
+          /** @default */
+          description: string;
+          /**
+           * @description The first version that includes a patch for this vulnerability
+           * @default
+           */
+          firstPatchedVersionIdentifier: string;
+          /**
+           * @description GitHub Security Advisory identifier (e.g., GHSA-1234-5678-9abc)
+           * @default
+           */
+          ghsaId: string;
+          /** @default critical */
+          severity: string;
+          /** @default */
+          title: string;
+          /** @default */
+          url: string;
+          /**
+           * @description Version range affected by this vulnerability (e.g., >= 2.0.0, < 2.17.1)
+           * @default
+           */
+          vulnerableVersionRange: string;
+          kevs: (({
+              /** @default */
+              vulnerabilityName: string;
+              /** @default */
+              shortDescription: string | null;
+              /** @default */
+              requiredAction: string | null;
+              /**
+               * @description Date when added to CISA KEV catalog (ISO 8601 format)
+               * @default
+               */
+              dateAdded: string;
+              /**
+               * @description Remediation deadline for federal agencies (ISO 8601 format)
+               * @default
+               */
+              dueDate: string | null;
+              /**
+               * @description Known, Unknown, or specific ransomware campaign names
+               * @default
+               */
+              knownRansomwareCampaignUse: string | null;
+              /** @default */
+              notes: string | null;
+              /** @default */
+              vendorProject: string;
+              /** @default */
+              product: string;
+            })[]) | null;
+          /** @description Exploit Prediction Scoring System https://www.first.org/epss/ */
+          epss: {
+            /** @default 0 */
+            score: number;
+            /** @default 0 */
+            percentile: number;
+          } | null;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      });
+    }) | ({
+      /** @enum {string} */
+      type?: "emptyPackage";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
@@ -1067,218 +2764,301 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "highEntropyStrings";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "urlStrings";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          urlFragment: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "usesEval";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default eval */
-          evalType: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "dynamicRequire";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "envVars";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          envVars: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "missingDependency";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          name: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "unusedDependency";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          name: string;
-          /** @default */
-          version: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "peerDependency";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          name: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "uncaughtOptionalDependency";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          name: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "unresolvedRequire";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "extraneousDependency";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "obfuscatedRequire";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "obfuscatedFile";
+      type?: "trivialPackage";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default 0 */
-          confidence: number;
+          linesOfCode: number;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "minifiedFile";
+      type?: "noREADME";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "shrinkwrap";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "licenseSpdxDisj";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
+          /** @default */
+          spdxDisj: string;
+          /** @default */
+          licenseScanResult: string;
+          violationData: Record<string, never>[];
+          warnData: Record<string, never>[];
+          monitorData: Record<string, never>[];
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "unsafeCopyright";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "licenseChange";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          prevLicenseId: string;
+          /** @default */
+          newLicenseId: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "nonOSILicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          licenseId: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "deprecatedLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          licenseId: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "missingLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "nonSPDXLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "unclearLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          possibleLicenseId: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "mixedLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          licenseId: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "notice";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "modifiedLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          licenseId: string;
           /** @default 0 */
-          confidence: number;
+          similarity: number;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "bidi";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "zeroWidth";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "badEncoding";
+      type?: "modifiedException";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
-          /** @default utf8 */
-          encoding: string;
+          /** @default */
+          exceptionId: string;
+          /** @default 0 */
+          similarity: number;
+          /** @default */
+          comments: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "homoglyphs";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "invisibleChars";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "suspiciousString";
+      type?: "licenseException";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          pattern: string;
+          exceptionId: string;
           /** @default */
-          explanation: string;
+          comments: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "deprecatedException";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          exceptionId: string;
+          /** @default */
+          comments: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "miscLicenseIssues";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          description: string;
+          /** @default */
+          location: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "unidentifiedLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          location: string;
+          /** @default {} */
+          maybeByteSpan: Record<string, never>;
+          /** @default */
+          maybeTruncatedSource: string;
+          /** @default 0 */
+          match_strength: number;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "noLicenseFound";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "explicitlyUnlicensedItem";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          location: string;
+          /** @default {} */
+          maybeByteSpan: Record<string, never>;
+          /** @default */
+          maybeTruncatedSource: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "copyleftLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          licenseId: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "nonpermissiveLicense";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          licenseId: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "ambiguousClassifier";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          classifier: string;
+          /** @default */
+          filepathOrProvenance: string;
+          /** @default {} */
+          maybeByteSpan: Record<string, never>;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
@@ -1465,41 +3245,44 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "emptyPackage";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: Record<string, never>;
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "trivialPackage";
+      type?: "malware";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default 0 */
-          linesOfCode: number;
+          id: number;
+          /** @default */
+          note: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "noREADME";
+      type?: "telemetry";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
-        props: Record<string, never>;
+        props: {
+          /** @default 0 */
+          id: number;
+          /** @default */
+          note: string;
+        };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "shrinkwrap";
+      type?: "troll";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
-        props: Record<string, never>;
+        props: {
+          /** @default 0 */
+          id: number;
+          /** @default */
+          note: string;
+        };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
@@ -1650,6 +3433,20 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
+      type?: "suspiciousStarActivity";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default 0 */
+          percentageSuspiciousStars: number;
+          /** @default */
+          repository: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
       type?: "unpopularPackage";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
@@ -1659,19 +3456,25 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "licenseSpdxDisj";
+      type?: "socketUpgradeAvailable";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
+          categories: string[];
+          /** @default false */
+          deprecated: boolean;
+          interop: string[];
           /** @default */
-          spdxDisj: string;
+          replacementPURL: string;
+          /** @default */
+          version: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "unsafeCopyright";
+      type?: "longStrings";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
@@ -1680,45 +3483,7 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "licenseChange";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          prevLicenseId: string;
-          /** @default */
-          newLicenseId: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "nonOSILicense";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          licenseId: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "deprecatedLicense";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          licenseId: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "missingLicense";
+      type?: "highEntropyStrings";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
@@ -1727,7 +3492,30 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "nonSPDXLicense";
+      type?: "urlStrings";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          urls: string[];
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "usesEval";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default eval */
+          evalType: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "dynamicRequire";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
@@ -1736,31 +3524,69 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "unclearLicense";
+      type?: "envVars";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          possibleLicenseId: string;
+          envVars: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "mixedLicense";
+      type?: "missingDependency";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          licenseId: string;
+          name: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "notice";
+      type?: "unusedDependency";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          name: string;
+          /** @default */
+          version: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "peerDependency";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          name: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "uncaughtOptionalDependency";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: {
+          /** @default */
+          name: string;
+        };
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "unresolvedRequire";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
@@ -1769,91 +3595,65 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "modifiedLicense";
+      type?: "extraneousDependency";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "obfuscatedRequire";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "obfuscatedFile";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
-          /** @default */
-          licenseId: string;
           /** @default 0 */
-          similarity: number;
+          confidence: number;
+          /** @default */
+          notes: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "modifiedException";
+      type?: "minifiedFile";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
-          /** @default */
-          exceptionId: string;
           /** @default 0 */
-          similarity: number;
-          /** @default */
-          comments: string;
+          confidence: number;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "licenseException";
+      type?: "installScripts";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          exceptionId: string;
+          script: string;
           /** @default */
-          comments: string;
+          source: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "deprecatedException";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          exceptionId: string;
-          /** @default */
-          comments: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "miscLicenseIssues";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          description: string;
-          /** @default */
-          location: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "unidentifiedLicense";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          location: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "noLicenseFound";
+      type?: "hasNativeCode";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
@@ -1862,49 +3662,25 @@ export interface components {
       };
     }) | ({
       /** @enum {string} */
-      type?: "explicitlyUnlicensedItem";
+      type?: "binScriptConfusion";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          location: string;
+          binScript: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "copyleftLicense";
+      type?: "shellScriptOverride";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          licenseId: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "nonpermissiveLicense";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          licenseId: string;
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      };
-    }) | ({
-      /** @enum {string} */
-      type?: "ambiguousClassifier";
-      value?: components["schemas"]["SocketIssueBasics"] & {
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          classifier: string;
+          binScript: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
@@ -1917,107 +3693,80 @@ export interface components {
         props: {
           /** @default */
           alternatePackage: string;
-          /** @default 0 */
-          editDistance: number;
-          /** @default 0 */
-          downloads: number;
-          /** @default 1 */
-          downloadsRatio: number;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "malware";
+      type?: "gptDidYouMean";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
-          /** @default 0 */
-          id: number;
           /** @default */
-          note: string;
+          alternatePackage: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "telemetry";
+      type?: "bidi";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "zeroWidth";
+      value?: components["schemas"]["SocketIssueBasics"] & {
+        /** @default */
+        description: string;
+        props: Record<string, never>;
+        usage?: components["schemas"]["SocketUsageRef"];
+      };
+    }) | ({
+      /** @enum {string} */
+      type?: "badEncoding";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
-          /** @default 0 */
-          id: number;
-          /** @default */
-          note: string;
+          /** @default utf8 */
+          encoding: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "troll";
+      type?: "homoglyphs";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
-        props: {
-          /** @default 0 */
-          id: number;
-          /** @default */
-          note: string;
-        };
+        props: Record<string, never>;
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "gptSecurity";
+      type?: "invisibleChars";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
-        props: {
-          /** @default */
-          notes: string;
-          /** @default 0 */
-          confidence: number;
-          /** @default 0 */
-          severity: number;
-        };
+        props: Record<string, never>;
         usage?: components["schemas"]["SocketUsageRef"];
       };
     }) | ({
       /** @enum {string} */
-      type?: "gptAnomaly";
-      value?: components["schemas"]["SocketIssueBasics"] & ({
-        /** @default */
-        description: string;
-        props: {
-          /** @default */
-          notes: string;
-          /** @default 0 */
-          confidence: number;
-          /** @default 0 */
-          severity: number;
-          /**
-           * @default medium
-           * @enum {string}
-           */
-          risk: "low" | "medium" | "high";
-        };
-        usage?: components["schemas"]["SocketUsageRef"];
-      });
-    }) | ({
-      /** @enum {string} */
-      type?: "gptMalware";
+      type?: "suspiciousString";
       value?: components["schemas"]["SocketIssueBasics"] & {
         /** @default */
         description: string;
         props: {
           /** @default */
-          notes: string;
-          /** @default 0 */
-          confidence: number;
-          /** @default 0 */
-          severity: number;
+          pattern: string;
+          /** @default */
+          explanation: string;
         };
         usage?: components["schemas"]["SocketUsageRef"];
       };
@@ -2051,18 +3800,11 @@ export interface components {
       limitingMetric?: string;
     };
     /**
+     * @description Package ecosystem type identifier based on the PURL specification
      * @default unknown
      * @enum {string}
      */
-    SocketPURL_Type: "unknown" | "npm" | "pypi" | "golang";
-    SocketManifestReference: {
-      /** @default */
-      file: string;
-      /** @default 0 */
-      start?: number;
-      /** @default 0 */
-      end?: number;
-    };
+    SocketPURL_Type: "apk" | "bitbucket" | "cocoapods" | "cargo" | "chrome" | "composer" | "conan" | "conda" | "cran" | "deb" | "docker" | "gem" | "generic" | "github" | "golang" | "hackage" | "hex" | "huggingface" | "maven" | "mlflow" | "npm" | "nuget" | "qpkg" | "oci" | "pub" | "pypi" | "rpm" | "swid" | "swift" | "unknown";
     /**
      * @default low
      * @enum {string}
@@ -2073,6 +3815,16 @@ export interface components {
      * @enum {string}
      */
     SocketCategory: "supplyChainRisk" | "quality" | "maintenance" | "vulnerability" | "license" | "miscellaneous";
+    ReachabilityResult: {
+      /**
+       * @description Type of reachability analysis performed
+       * @default precomputed
+       * @enum {string}
+       */
+      type: "precomputed" | "full-scan";
+      /** @description Reachability analysis results for each vulnerability */
+      results: components["schemas"]["ReachabilityResultItem"][];
+    };
     SocketIssueBasics: {
       severity: components["schemas"]["SocketIssueSeverity"];
       category: components["schemas"]["SocketCategory"];
@@ -2094,12 +3846,80 @@ export interface components {
       /** @default null */
       value: Record<string, never>;
     };
+    ReachabilityResultItem: {
+      type: components["schemas"]["ReachabilityType"];
+      /**
+       * @description Indicates if the reachability analysis was stopped early due to depth or complexity limits
+       * @default false
+       */
+      truncated?: boolean;
+      /**
+       * @description Error message if reachability analysis failed
+       * @default
+       */
+      error?: string;
+      matches?: {
+        /** @enum {string} */
+        type?: "function-level";
+        value?: components["schemas"]["CallStackItem"][][];
+      } | {
+        /** @enum {string} */
+        type?: "class-level";
+        value?: components["schemas"]["ClassStackItem"][][];
+      };
+      /**
+       * @description Path to the workspace root for multi-workspace projects
+       * @default
+       */
+      workspacePath?: string;
+      /**
+       * @description Path to the subproject within the workspace
+       * @default
+       */
+      subprojectPath?: string;
+    };
     SocketRefList: components["schemas"]["SocketRef"][];
     SocketRefFile: {
       /** @default */
       path: string;
       range?: components["schemas"]["SocketRefTextRange"];
       bytes?: components["schemas"]["SocketRefByteRange"];
+    };
+    /**
+     * @description Status of reachability analysis for vulnerable code paths
+     * @default unknown
+     * @enum {string}
+     */
+    ReachabilityType: "missing_support" | "undeterminable_reachability" | "pending" | "unreachable" | "unknown" | "direct_dependency" | "error" | "maybe_reachable" | "reachable";
+    CallStackItem: {
+      /**
+       * @description Package URL (PURL) of the dependency containing this code
+       * @default
+       */
+      purl?: string;
+      sourceLocation?: components["schemas"]["SourceLocation"];
+      /**
+       * @description Confidence score from 0.0 to 1.0 indicating how certain the reachability analysis is about this result
+       * @default 0
+       */
+      confidence?: number;
+    };
+    ClassStackItem: {
+      /**
+       * @description Package URL (PURL) of the dependency containing this class
+       * @default
+       */
+      purl?: string;
+      /**
+       * @description Name of the class in the dependency
+       * @default
+       */
+      class?: string;
+      /**
+       * @description Confidence score from 0.0 to 1.0 indicating how certain the reachability analysis is about this result
+       * @default 0
+       */
+      confidence?: number;
     };
     SocketRef: {
       /** @enum {string} */
@@ -2141,6 +3961,52 @@ export interface components {
       start: number;
       /** @default 0 */
       end: number;
+    };
+    SourceLocation: {
+      start: {
+        /**
+         * @description Line number in the source file
+         * @default 0
+         */
+        line: number;
+        /**
+         * @description Column number in the source file
+         * @default 0
+         */
+        column: number;
+        /**
+         * @description Absolute byte position from the beginning of the file, used for precise location tracking
+         * @default 0
+         */
+        byteOffset: number;
+      };
+      end: {
+        /**
+         * @description Line number in the source file
+         * @default 0
+         */
+        line?: number;
+        /**
+         * @description Column number in the source file
+         * @default 0
+         */
+        column?: number;
+        /**
+         * @description Absolute byte position from the beginning of the file, used for precise location tracking
+         * @default 0
+         */
+        byteOffset?: number;
+      };
+      /**
+       * @description Path to the source file
+       * @default
+       */
+      filename: string;
+      /**
+       * @description Hash of the source file for integrity verification
+       * @default
+       */
+      fileHash: string;
     };
     SocketRefNPM: {
       /** @default */
@@ -2188,6 +4054,8 @@ export interface components {
           error: {
             /** @default */
             message: string;
+            /** @default null */
+            details: Record<string, unknown> | null;
           };
         };
       };
@@ -2199,6 +4067,8 @@ export interface components {
           error: {
             /** @default */
             message: string;
+            /** @default null */
+            details: Record<string, unknown> | null;
           };
         };
       };
@@ -2210,6 +4080,8 @@ export interface components {
           error: {
             /** @default */
             message: string;
+            /** @default null */
+            details: Record<string, unknown> | null;
           };
         };
       };
@@ -2221,6 +4093,8 @@ export interface components {
           error: {
             /** @default */
             message: string;
+            /** @default null */
+            details: Record<string, unknown> | null;
           };
         };
       };
@@ -2239,6 +4113,8 @@ export interface components {
           error: {
             /** @default */
             message: string;
+            /** @default null */
+            details: Record<string, unknown> | null;
           };
         };
       };
@@ -2250,6 +4126,8 @@ export interface components {
           error: {
             /** @default */
             message: string;
+            /** @default null */
+            details: Record<string, unknown> | null;
           };
         };
       };
@@ -2261,6 +4139,8 @@ export interface components {
           error: {
             /** @default */
             message: string;
+            /** @default null */
+            details: Record<string, unknown> | null;
           };
         };
       };
@@ -2280,7 +4160,7 @@ export type external = Record<string, never>;
 export interface operations {
 
   /**
-   * Get Packages (Beta)
+   * Get Packages by PURL
    * @description Batch retrieval of package metadata and alerts by PURL strings. Compatible witch CycloneDX reports.
    *
    * Package URLs (PURLs) are an ecosystem agnostic way to identify packages.
@@ -2291,6 +4171,9 @@ export interface operations {
    *
    * - [`purl` Spec](https://github.com/package-url/purl-spec)
    * - [CycloneDX Spec](https://cyclonedx.org/specification/overview/#components)
+   *
+   * This endpoint returns the latest available alert data for artifacts in the batch (stale while revalidate).
+   * Actively running analysis will be returned when available on subsequent runs.
    *
    * ## Examples:
    *
@@ -2356,9 +4239,18 @@ export interface operations {
   batchPackageFetch: {
     parameters: {
       query?: {
-        licensedetails?: boolean;
-        licenseattrib?: boolean;
+        /** @description Include alert metadata. */
         alerts?: boolean;
+        /** @description Include only alerts with comma separated actions defined by security policy. */
+        actions?: ("error" | "monitor" | "warn" | "ignore")[];
+        /** @description Compact metadata. */
+        compact?: boolean;
+        /** @description Include only fixable alerts. */
+        fixable?: boolean;
+        /** @description Include license attribution data, including license text and author information. Maps attribution/license text to a list of data objects to which that attribution info applies. */
+        licenseattrib?: boolean;
+        /** @description Include detailed license information, including location and match strength, for each license datum. */
+        licensedetails?: boolean;
       };
     };
     requestBody?: {
@@ -2381,6 +4273,447 @@ export interface operations {
     };
   };
   /**
+   * License Policy (Beta)
+   * @description Compare the license data found for a list of packages (given as PURL strings) with the contents of a configurable license policy,
+   * returning information about license data which does not comply with the license allow list.
+   *
+   * ## Example request body:
+   *
+   * ```json
+   * {
+   *   "components": [
+   *     {
+   *       "purl": "pkg:npm/lodash@4.17.21"
+   *     },
+   *     {
+   *       "purl": "pkg:npm/lodash@4.14.1"
+   *     }
+   *   ],
+   *   "allow": [
+   *     "permissive",
+   *     "pkg:npm/lodash?file_name=foo/test/*&version_glob=4.17.*"
+   *   ],
+   *   "warn": [
+   *     "copyleft",
+   *     "pkg:npm/lodash?file_name=foo/prod/*&version_glob=4.14.*"
+   *   ],
+   *   "options": ["toplevelOnly"]
+   * }
+   * ```
+   *
+   *
+   * ## Return value
+   *
+   * For each requested PURL, an array is returned. Each array contains a list of license policy violations
+   * detected for the requested PURL.
+   *
+   * Violations are accompanied by a string identifying the offending license data as `spdxAtomOrExtraData`,
+   * a message describing why the license data is believed to be incompatible with the license policy, and a list
+   * of locations (by filepath or other provenance information) where the offending license data may be found.
+   *
+   * ```json
+   * Array<
+   *   Array<{
+   *     filepathOrProvenance: Array<string>,
+   *     level: "warning" | "violation",
+   *     purl: string,
+   *     spdxAtomOrExtraData: string,
+   *     violationExplanation: string
+   *   }>
+   * >
+   * ```
+   *
+   *
+   * ## License policy schema
+   *
+   * ```json
+   * {
+   *   allow?: Array<string>
+   *   warn?: Array<string>
+   *   options?: Array<string>
+   * }
+   * ```
+   *
+   * Elements of the `allow` and `warn` arrays strings representing items which should be allowed, or which should trigger a warning; license data found in pacakge which not present in either array will produce a license violation (effectively a "hard" error). For example, to allow Apache-2.0 and MIT to the allow list, simply add the strings "Apache-2.0" and "MIT" to the `allow` array. Strings appearing in these arrays are generally "what you see is what you get", with two important exceptions: strings which are recognized as license classes and strings which are recognized as PURLs are handled differently to allow for more flexible license policy creation.
+   *
+   * ## License Classes
+   *
+   * Strings which are license classes will expand to a list of licenses known to be in that particular license class. Recognized license classes are:
+   *   'permissive',
+   *   'permissive (model)',
+   *   'permissive (gold)',
+   *   'permissive (silver)',
+   *   'permissive (bronze)',
+   *   'permissive (lead)',
+   *   'copyleft',
+   *   'maximal copyleft',
+   *   'network copyleft',
+   *   'strong copyleft',
+   *   'weak copyleft',
+   *   'contributor license agreement',
+   *   'public domain',
+   *   'proprietary free',
+   *   'source available',
+   *   'proprietary',
+   *   'commercial',
+   *   'patent'
+   *
+   * Users can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+   *
+   *
+   * ## PURLs
+   *
+   * Users may also modify their license policy's allow and warn lists by using [package URLs](https://github.com/package-url/purl-spec) (aka PURLs), which support glob patterns to allow a range of versions, files and directories, etc.
+   *
+   * purl qualifiers which support globs are `filename`, `version_glob`, `artifact_id` and `license_provenance` (primarily used for allowing data from registry metadata).
+   *
+   * ### Examples:
+   * Allow all license data found in a specific version of a package 4.14.1: `pkg:npm/lodash@4.14.1`
+   * Allow all license data found in a version range of a package: `pkg:npm/lodash?version_glob=15.*`
+   * Allow all license data in the test directory of a given package for certain version ranges: `pkg:npm/lodash@15.*.*?file_name=lodash/test/*`
+   * Allow all license data taken from the package registry for a package and version range: `pkg:npm/lodash?version_glob=*&license_provenance=registry_metadata`
+   *
+   * ## Available options
+   *
+   * `toplevelOnly`: only apply the license policy to "top level" license data in a package, which includes registry metadata, LICENSE files, and manifest files which are closest to the root of the package.
+   *
+   * `applyToUnidentified`: Apply license policy to found but unidentified license data. If enabled, the license policy will be applied to license data which could not be affirmatively identified as a known license (this will effectively merge the license policy violation and unidentified license alerts). If disabled, license policy alerts will only be shown for license data which is positively identified as something not allowed or set to warn by the license policy.
+   *
+   * This endpoint consumes 100 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   *       - packages:list
+   * - license-policy:read
+   */
+  licensePolicy: {
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["LicenseAllowListRequest"];
+      };
+    };
+    responses: {
+      /** @description Data about license policy violations, if any exist */
+      200: {
+        content: {
+          "application/x-ndjson": {
+              filepathOrProvenance: string[];
+              /** @default */
+              level: string;
+              /** @default */
+              purl: string;
+              /** @default */
+              spdxAtomOrExtraData: string;
+              /** @default */
+              violationExplanation: string;
+            }[];
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+      500: components["responses"]["SocketInternalServerError"];
+    };
+  };
+  /**
+   * Saturate License Policy (Legacy)
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/updateorglicensepolicy) for more information. Use the [successor version](/v0/orgs/{org_slug}/settings/license-policy) instead.
+   *
+   * Get the "saturated" version of a license policy's allow list, filling in the entire set of allowed
+   * license data. For example, the saturated form of a license allow list which only specifies that
+   * licenses in the tier "maximal copyleft" are allowed is shown below (note the expanded `allowedStrings` property):
+   *
+   * ```json
+   * {
+   *   "allowedApprovalSources": [],
+   *   "allowedFamilies": [],
+   *   "allowedTiers": [
+   *     "maximal copyleft"
+   *   ],
+   *   "allowedStrings": [
+   *     "Parity-6.0.0",
+   *     "QPL-1.0-INRIA-2004",
+   *     "QPL-1.0",
+   *     "RPL-1.1",
+   *     "RPL-1.5"
+   *   ],
+   *   "allowedPURLs": [],
+   *   "focusAlertsHere": false
+   * }
+   * ```
+   *
+   * This may be helpful for users who want to compose more complex sets of allowed license data via
+   * the "allowedStrings" property, or for users who want to know more about the contents of a particular
+   * license group (family, tier, or approval source).
+   *
+   * ## Allow List Schema
+   *
+   * ```json
+   * ```
+   *
+   * where
+   *
+   * PermissiveTier ::= "model permissive" | "gold" | "silver" | "bronze" | "lead"
+   * CopyleftTier ::= "maximal copyleft" | "network copyleft" | "strong copyleft" | "weak copyleft"
+   *
+   * ## Return Value
+   *
+   * The returned value has the same shape as a license allow list:
+   *
+   * ```json
+   * {
+   *   allowedApprovalSources?: Array<"fsf" | "osi">,
+   *   allowedFamilies?: Array<"copyleft" | "permissive">,
+   *   allowedTiers?: Array<PermissiveTier | CopyleftTier>,
+   *   allowedStrings?: Array<string>
+   *   allowedPURLs?: Array<string>
+   *   focusAlertsHere?: boolean
+   * }
+   * ```
+   *
+   * where
+   *
+   * PermissiveTier ::= "model permissive" | "gold" | "silver" | "bronze" | "lead"
+   * CopyleftTier ::= "maximal copyleft" | "network copyleft" | "strong copyleft" | "weak copyleft"
+   *
+   * readers can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+   *
+   * ### Example request bodies:
+   * ```json
+   * {
+   *   "allowedApprovalSources": ["fsf"],
+   *   "allowedPURLs": [],
+   *   "allowedFamilies": ["copyleft"],
+   *   "allowedTiers": ["model permissive"],
+   *   "allowedStrings": ["License :: OSI Approved :: BSD License"],
+   *   "focusAlertsHere": false
+   * }
+   * ```
+   *
+   * This endpoint consumes 100 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - packages:list
+   */
+  saturateLicensePolicy: {
+    requestBody?: {
+      content: {
+        "application/json": {
+          allow: components["schemas"]["LicenseAllowList"];
+          warn: components["schemas"]["LicenseAllowList"];
+          monitor: components["schemas"]["LicenseAllowList"];
+          allowedApprovalSources: string[] | null;
+          allowedFamilies: string[] | null;
+          allowedTiers: string[] | null;
+          allowedStrings: string[] | null;
+          allowedPURLs: string[] | null;
+          /** @default false */
+          focusAlertsHere: boolean | null;
+        };
+      };
+    };
+    responses: {
+      /** @description Saturated License Allow List */
+      200: {
+        content: {
+          "application/json": components["schemas"]["LicensePolicy"];
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+      500: components["responses"]["SocketInternalServerError"];
+    };
+  };
+  /**
+   * License Metadata
+   * @description For an array of license identifiers or names (short form SPDX identifiers, or long form license names),
+   * returns an array of metadata for the corresponding license, if the license is recognized. If the query
+   * parameter `includetext=true` is set, the returned metadata will also include the license text.
+   *
+   *
+   * ## Example request body:
+   *
+   * ```json
+   * [
+   *   "Apache-2.0",
+   *   "BSD Zero Clause License"
+   * ]
+   * ```
+   *
+   *
+   * ## Return value
+   *
+   * ```json
+   * // Response schema:
+   * Array<{
+   *   licenseId: string,
+   *   name?: string,
+   *   deprecated?: string,
+   *   crossref?: string
+   *   classes: Array<string>
+   *   text?: string
+   * }>
+   *
+   * // Example response:
+   * [
+   *   {
+   *     "licenseId": "Apache-2.0",
+   *     "name": "Apache License 2.0",
+   *     "deprecated": false,
+   *     "crossref": "https://spdx.org/licenses/Apache-2.0.html",
+   *     "classes": [
+   *       "fsf libre",
+   *       "osi approved",
+   *       "permissive (silver)"
+   *     ]
+   *   },
+   *   {
+   *     "licenseId": "0BSD",
+   *     "name": "BSD Zero Clause License",
+   *     "deprecated": false,
+   *     "crossref": "https://spdx.org/licenses/0BSD.html",
+   *     "classes": [
+   *       "osi approved",
+   *       "permissive (bronze)"
+   *     ]
+   *   }
+   * ]
+   * ```
+   *
+   *
+   * ## License policy schema
+   *
+   * ```json
+   * {
+   *   allow?: Array<string>
+   *   warn?: Array<string>
+   *   options?: Array<string>
+   * }
+   * ```
+   *
+   * Elements of the `allow` and `warn` arrays strings representing items which should be allowed, or which should trigger a warning; license data found in pacakge which not present in either array will produce a license violation (effectively a "hard" error). For example, to allow Apache-2.0 and MIT to the allow list, simply add the strings "Apache-2.0" and "MIT" to the `allow` array. Strings appearing in these arrays are generally "what you see is what you get", with two important exceptions: strings which are recognized as license classes and strings which are recognized as PURLs are handled differently to allow for more flexible license policy creation.
+   *
+   * ## License Classes
+   *
+   * Strings which are license classes will expand to a list of licenses known to be in that particular license class. Recognized license classes are:
+   *   'permissive',
+   *   'permissive (model)',
+   *   'permissive (gold)',
+   *   'permissive (silver)',
+   *   'permissive (bronze)',
+   *   'permissive (lead)',
+   *   'copyleft',
+   *   'maximal copyleft',
+   *   'network copyleft',
+   *   'strong copyleft',
+   *   'weak copyleft',
+   *   'contributor license agreement',
+   *   'public domain',
+   *   'proprietary free',
+   *   'source available',
+   *   'proprietary',
+   *   'commercial',
+   *   'patent'
+   *
+   * Users can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+   *
+   *
+   * ## PURLs
+   *
+   * Users may also modify their license policy's allow and warn lists by using [package URLs](https://github.com/package-url/purl-spec) (aka PURLs), which support glob patterns to allow a range of versions, files and directories, etc.
+   *
+   * purl qualifiers which support globs are `filename`, `version_glob`, `artifact_id` and `license_provenance` (primarily used for allowing data from registry metadata).
+   *
+   * ### Examples:
+   * Allow all license data found in a specific version of a package 4.14.1: `pkg:npm/lodash@4.14.1`
+   * Allow all license data found in a version range of a package: `pkg:npm/lodash?version_glob=15.*`
+   * Allow all license data in the test directory of a given package for certain version ranges: `pkg:npm/lodash@15.*.*?file_name=lodash/test/*`
+   * Allow all license data taken from the package registry for a package and version range: `pkg:npm/lodash?version_glob=*&license_provenance=registry_metadata`
+   *
+   * ## Available options
+   *
+   * `toplevelOnly`: only apply the license policy to "top level" license data in a package, which includes registry metadata, LICENSE files, and manifest files which are closest to the root of the package.
+   *
+   * `applyToUnidentified`: Apply license policy to found but unidentified license data. If enabled, the license policy will be applied to license data which could not be affirmatively identified as a known license (this will effectively merge the license policy violation and unidentified license alerts). If disabled, license policy alerts will only be shown for license data which is positively identified as something not allowed or set to warn by the license policy.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   */
+  licenseMetadata: {
+    parameters: {
+      query?: {
+        /** @description If `true`, the response will include the full text of the requested licenses */
+        includetext?: boolean;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": components["schemas"]["SLicenseMetaReq"];
+      };
+    };
+    responses: {
+      /** @description Metadata for the requested licenses */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SLicenseMetaRes"];
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+    };
+  };
+  /**
+   * Alert Types Metadata
+   * @description For an array of alert type identifiers, returns metadata for each alert type. Optionally, specify a language via the 'language' query parameter.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   */
+  alertTypes: {
+    parameters: {
+      query?: {
+        /** @description Language for alert metadata */
+        language?: "ach-UG" | "de-DE" | "en-US" | "es-ES" | "fr-FR" | "it-IT";
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": string[];
+      };
+    };
+    responses: {
+      /** @description Metadata for the requested alert types */
+      200: {
+        content: {
+          "application/json": ({
+              /** @default */
+              type: string;
+              /** @default */
+              title: string;
+              /** @default */
+              description: string;
+              /** @default */
+              suggestion: string;
+              /** @default */
+              emoji: string;
+              /** @default */
+              nextStepTitle: string;
+              props: {
+                [key: string]: string;
+              } | null;
+            })[];
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+    };
+  };
+  /**
    * Get Audit Log Events
    * @description Paginated list of audit log events.
    *
@@ -2393,11 +4726,13 @@ export interface operations {
     parameters: {
       query?: {
         /** @description Filter audit log events by type. Omit for all types. */
-        type?: "BookDemo" | "CancelInvitation" | "ChangeMemberRole" | "ChangePlanSubscriptionSeats" | "ContactForm" | "CreateApiToken" | "CreateUser" | "GithubAppInstallation" | "JoinOrganizationByVcs" | "LinkAccount" | "RemoveMember" | "ResetInvitationLink" | "ResetOrganizationSettingToDefault" | "RotateApiToken" | "SendInvitation" | "SignIn" | "SignOut" | "Subscribe" | "SyncOrganization" | "TransferOwnership" | "UpdateAlertTriage" | "UpdateApiTokenName" | "UpdateApiTokenScopes" | "UpdateApiTokenVisibility" | "UpdateOrganizationSetting" | "UpgradeOrganizationPlan" | "VerifiedEmail" | "DeleteRepository" | "DeleteReport";
+        type?: "AddLicenseOverlayNote" | "AssociateLabel" | "CancelInvitation" | "ChangeMemberRole" | "ChangePlanSubscriptionSeats" | "CreateApiToken" | "CreateLabel" | "DeleteLabel" | "DeleteLabelSetting" | "DeleteReport" | "DeleteRepository" | "DisassociateLabel" | "JoinOrganization" | "RemoveLicenseOverlay" | "RemoveMember" | "ResetInvitationLink" | "ResetOrganizationSettingToDefault" | "RevokeApiToken" | "RotateApiToken" | "SendInvitation" | "SetLabelSettingToDefault" | "SyncOrganization" | "TransferOwnership" | "UpdateAlertTriage" | "UpdateApiTokenCommitter" | "UpdateApiTokenMaxQuota" | "UpdateApiTokenName" | "UpdateApiTokenScopes" | "UpdateApiTokenVisibility" | "UpdateAutopatchCurated" | "UpdateLabel" | "UpdateLabelSetting" | "UpdateOrganizationSetting" | "UpgradeOrganizationPlan";
         /** @description Number of events per page */
         per_page?: number;
         /** @description Page token */
         page?: string;
+        /** @description A Unix timestamp in seconds to filter results prior to this date. */
+        from?: string;
       };
       path: {
         /** @description The slug of the organization */
@@ -2409,7 +4744,7 @@ export interface operations {
       200: {
         content: {
           "application/json": {
-            results: {
+            results: ({
                 /** @default */
                 event_id?: string;
                 /** @default */
@@ -2417,30 +4752,30 @@ export interface operations {
                 /** @default */
                 updated_at?: string;
                 /** @default */
-                country_code?: string;
+                country_code?: string | null;
                 /** @default */
-                organization_id?: string;
+                organization_id?: string | null;
                 /** @default */
-                ip_address?: string;
+                ip_address?: string | null;
                 /** @default null */
-                payload?: Record<string, never>;
+                payload?: Record<string, unknown> | null;
                 /** @default 0 */
-                status_code?: number;
+                status_code?: number | null;
                 /** @default */
                 type?: string;
                 /** @default */
-                user_agent?: string;
+                user_agent?: string | null;
                 /** @default */
-                user_id?: string;
+                user_id?: string | null;
                 /** @default */
                 user_email?: string;
                 /** @default */
                 user_image?: string;
                 /** @default */
                 organization_name?: string;
-              }[];
+              })[];
             /** @default */
-            nextPage: string;
+            nextPage: string | null;
           };
         };
       };
@@ -2455,6 +4790,17 @@ export interface operations {
    * Export CycloneDX SBOM (Beta)
    * @description Export a Socket SBOM as a CycloneDX SBOM
    *
+   * Supported ecosystems:
+   *
+   * - go
+   * - maven
+   * - npm
+   * - pypi
+   * - spdx
+   * - cdx
+   *
+   * Unsupported ecosystems are filtered from the export.
+   *
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
@@ -2463,11 +4809,21 @@ export interface operations {
   exportCDX: {
     parameters: {
       query?: {
+        /**
+         * @description The person(s) who created the BOM.
+         * Set this value if you're intending the modify the BOM and claim authorship.
+         */
         author?: string;
+        /** @description Dependency track project group */
         project_group?: string;
+        /** @description Dependency track project name. Default use the directory name */
         project_name?: string;
+        /** @description Dependency track project version */
         project_version?: string;
+        /** @description Dependency track project id. Either provide the id or the project name and version together */
         project_id?: string;
+        /** @description Include vulnerability information in the SBOM. Also includes reachability/VEX if available */
+        include_vulnerabilities?: string;
       };
       path: {
         /** @description The slug of the organization */
@@ -2493,6 +4849,17 @@ export interface operations {
    * Export SPDX SBOM (Beta)
    * @description Export a Socket SBOM as a SPDX SBOM
    *
+   * Supported ecosystems:
+   *
+   * - go
+   * - maven
+   * - npm
+   * - pypi
+   * - spdx
+   * - cdx
+   *
+   * Unsupported ecosystems are filtered from the export.
+   *
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
@@ -2501,11 +4868,21 @@ export interface operations {
   exportSPDX: {
     parameters: {
       query?: {
+        /**
+         * @description The person(s) who created the BOM.
+         * Set this value if you're intending the modify the BOM and claim authorship.
+         */
         author?: string;
+        /** @description Dependency track project group */
         project_group?: string;
+        /** @description Dependency track project name. Default use the directory name */
         project_name?: string;
+        /** @description Dependency track project version */
         project_version?: string;
+        /** @description Dependency track project id. Either provide the id or the project name and version together */
         project_id?: string;
+        /** @description Include vulnerability information in the SBOM. Also includes reachability/VEX if available */
+        include_vulnerabilities?: string;
       };
       path: {
         /** @description The slug of the organization */
@@ -2551,6 +4928,12 @@ export interface operations {
         from?: string;
         /** @description A repository slug to filter full-scans by. */
         repo?: string;
+        /** @description A branch name to filter full-scans by. */
+        branch?: string;
+        /** @description A PR number to filter full-scans by. */
+        pull_request?: string;
+        /** @description A commit hash to filter full-scans by. */
+        commit_hash?: string;
       };
       path: {
         /** @description The slug of the organization */
@@ -2562,7 +4945,7 @@ export interface operations {
       200: {
         content: {
           "application/json": {
-            results: {
+            results: ({
                 /** @default */
                 id?: string;
                 /** @default */
@@ -2572,23 +4955,47 @@ export interface operations {
                 /** @default */
                 organization_id?: string;
                 /** @default */
+                organization_slug?: string;
+                /** @default */
                 repository_id?: string;
+                /** @default */
+                repository_slug?: string;
+                /** @default */
+                branch?: string | null;
+                /** @default */
+                commit_message?: string | null;
+                /** @default */
+                commit_hash?: string | null;
+                /** @default 0 */
+                pull_request?: number | null;
                 committers?: string[];
+                /** @default */
+                html_url?: string | null;
+                /** @default */
+                api_url?: string | null;
                 /** @default */
                 repo?: string;
                 /** @default */
-                branch?: string;
-                /** @default */
-                commit_message?: string;
-                /** @default */
-                commit_hash?: string;
-                /** @default 0 */
-                pull_request?: number;
-                /** @default */
                 html_report_url?: string;
-              }[];
+                /** @default */
+                integration_type?: string | null;
+                /** @default */
+                integration_repo_url?: string;
+                /** @default */
+                integration_branch_url?: string | null;
+                /** @default */
+                integration_commit_url?: string | null;
+                /** @default */
+                integration_pull_request_url?: string | null;
+                /**
+                 * @description The current processing status of the SBOM
+                 * @default pending
+                 * @enum {string|null}
+                 */
+                scan_state?: "pending" | "precrawl" | "resolve" | "scan" | null;
+              })[];
             /** @default 0 */
-            nextPage: number;
+            nextPage: number | null;
           };
         };
       };
@@ -2603,6 +5010,10 @@ export interface operations {
    * Create full scan
    * @description Create a full scan from a set of package manifest files. Returns a full scan including all SBOM artifacts.
    *
+   * To get a list of supported filetypes that can be uploaded in a full-scan, see the [Get supported file types](/reference/getsupportedfiles) endpoint.
+   *
+   * The maximum number of files you can upload at a time is 5000 and each file can be no bigger than 16.8 MB.
+   *
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
@@ -2613,7 +5024,7 @@ export interface operations {
       query: {
         /** @description The slug of the repository to associate the full-scan with. */
         repo: string;
-        /** @description The branch name to associate the full-scan with. */
+        /** @description The branch name to associate the full-scan with. Branch names must follow Git branch name rules: be 1–255 characters long; cannot be exactly @;  cannot begin or end with /, ., or .lock; cannot contain "//", "..", or "@{"; and cannot include control characters, spaces, or any of ~^:?*[. */
         branch?: string;
         /** @description The commit message to associate the full-scan with. */
         commit_message?: string;
@@ -2623,8 +5034,15 @@ export interface operations {
         pull_request?: number;
         /** @description The committers to associate the full-scan with. Set query more than once to set multiple. */
         committers?: string;
+        /** @description The integration type to associate the full-scan with. Defaults to "Api" if omitted. */
+        integration_type?: "api" | "github" | "gitlab" | "bitbucket" | "azure";
+        /** @description The integration org slug to associate the full-scan with. If omitted, the Socket org name will be used. This is used to generate links and badges. */
+        integration_org_slug?: string;
+        /** @description Set the default branch of the repository to the branch of this full-scan. A branch name is required with this option. */
         make_default_branch?: boolean;
+        /** @description Designate this full-scan as the latest scan of a given branch. Default branch head scans are included in org alerts. This is only supported on the default branch. A branch name is required with this option. */
         set_as_pending_head?: boolean;
+        /** @description Create a temporary full-scan that is not listed in the reports dashboard. Cannot be used when set_as_pending_head=true. */
         tmp?: boolean;
       };
       path: {
@@ -2640,7 +5058,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Upload manifest files to create a full scan in an org's repo */
+      /** @description The details of the created full scan. */
       201: {
         content: {
           "application/json": {
@@ -2653,20 +5071,45 @@ export interface operations {
             /** @default */
             organization_id?: string;
             /** @default */
+            organization_slug?: string;
+            /** @default */
             repository_id?: string;
+            /** @default */
+            repository_slug?: string;
+            /** @default */
+            branch?: string | null;
+            /** @default */
+            commit_message?: string | null;
+            /** @default */
+            commit_hash?: string | null;
+            /** @default 0 */
+            pull_request?: number | null;
             committers?: string[];
+            /** @default */
+            html_url?: string | null;
+            /** @default */
+            api_url?: string | null;
             /** @default */
             repo?: string;
             /** @default */
-            branch?: string;
-            /** @default */
-            commit_message?: string;
-            /** @default */
-            commit_hash?: string;
-            /** @default 0 */
-            pull_request?: number;
-            /** @default */
             html_report_url?: string;
+            /** @default */
+            integration_type?: string | null;
+            /** @default */
+            integration_repo_url?: string;
+            /** @default */
+            integration_branch_url?: string | null;
+            /** @default */
+            integration_commit_url?: string | null;
+            /** @default */
+            integration_pull_request_url?: string | null;
+            /**
+             * @description The current processing status of the SBOM
+             * @default pending
+             * @enum {string|null}
+             */
+            scan_state?: "pending" | "precrawl" | "resolve" | "scan" | null;
+            unmatchedFiles?: string[];
           };
         };
       };
@@ -2681,6 +5124,9 @@ export interface operations {
    * Stream full scan
    * @description Stream all SBOM artifacts for a full scan.
    *
+   * This endpoint returns the latest, available alert data for artifacts in the full scan (stale while revalidate).
+   * Actively running analysis will be returned when available on subsequent runs.
+   *
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
@@ -2688,6 +5134,12 @@ export interface operations {
    */
   getOrgFullScan: {
     parameters: {
+      query: {
+        /** @description Control which alert priority fields to include in the response. Set to "true" to include all fields, "false" to exclude all fields, or specify individual fields like "components,formula" to include only those fields. */
+        include_alert_priority_details?: boolean | (("component" | "formula")[]);
+        /** @description Include license details in the response. This can increase the response size significantly. */
+        include_license_details: boolean;
+      };
       path: {
         /** @description The slug of the organization */
         org_slug: string;
@@ -2776,20 +5228,893 @@ export interface operations {
             /** @default */
             organization_id?: string;
             /** @default */
+            organization_slug?: string;
+            /** @default */
             repository_id?: string;
+            /** @default */
+            repository_slug?: string;
+            /** @default */
+            branch?: string | null;
+            /** @default */
+            commit_message?: string | null;
+            /** @default */
+            commit_hash?: string | null;
+            /** @default 0 */
+            pull_request?: number | null;
             committers?: string[];
+            /** @default */
+            html_url?: string | null;
+            /** @default */
+            api_url?: string | null;
             /** @default */
             repo?: string;
             /** @default */
-            branch?: string;
-            /** @default */
-            commit_message?: string;
-            /** @default */
-            commit_hash?: string;
-            /** @default 0 */
-            pull_request?: number;
-            /** @default */
             html_report_url?: string;
+            /** @default */
+            integration_type?: string | null;
+            /** @default */
+            integration_repo_url?: string;
+            /** @default */
+            integration_branch_url?: string | null;
+            /** @default */
+            integration_commit_url?: string | null;
+            /** @default */
+            integration_pull_request_url?: string | null;
+            /**
+             * @description The current processing status of the SBOM
+             * @default pending
+             * @enum {string|null}
+             */
+            scan_state?: "pending" | "precrawl" | "resolve" | "scan" | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Diff Full Scans
+   * @deprecated
+   * @description **This endpoint is deprecated.**
+   *
+   * Get the difference between two existing Full Scans. The results are not persisted.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - full-scans:list
+   */
+  GetOrgDiffScan: {
+    parameters: {
+      query: {
+        /** @description The full scan ID of the base/target of the diff (older) */
+        after: string;
+        /** @description The full scan ID of the head/changed side of the diff (newer) */
+        before: string;
+        /** @description Include license details in the response. This can increase the response size significantly. */
+        include_license_details?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The difference between the two provided Full Scans. */
+      200: {
+        content: {
+          "application/json": {
+            before: {
+              /** @default */
+              id: string;
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+              /** @default */
+              organization_id: string;
+              /** @default */
+              organization_slug: string;
+              /** @default */
+              repository_id: string;
+              /** @default */
+              repository_slug: string;
+              /** @default */
+              branch: string | null;
+              /** @default */
+              commit_message: string | null;
+              /** @default */
+              commit_hash: string | null;
+              /** @default 0 */
+              pull_request: number | null;
+              committers: string[];
+              /** @default */
+              html_url: string | null;
+              /** @default */
+              api_url: string | null;
+            };
+            after: {
+              /** @default */
+              id: string;
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+              /** @default */
+              organization_id: string;
+              /** @default */
+              organization_slug: string;
+              /** @default */
+              repository_id: string;
+              /** @default */
+              repository_slug: string;
+              /** @default */
+              branch: string | null;
+              /** @default */
+              commit_message: string | null;
+              /** @default */
+              commit_hash: string | null;
+              /** @default 0 */
+              pull_request: number | null;
+              committers: string[];
+              /** @default */
+              html_url: string | null;
+              /** @default */
+              api_url: string | null;
+            };
+            artifacts: {
+              added: components["schemas"]["SocketDiffArtifact"][];
+              removed: components["schemas"]["SocketDiffArtifact"][];
+              unchanged: components["schemas"]["SocketDiffArtifact"][];
+              replaced: components["schemas"]["SocketDiffArtifact"][];
+              updated: components["schemas"]["SocketDiffArtifact"][];
+            };
+            /** @default false */
+            directDependenciesChanged: boolean;
+            /** @default */
+            diff_report_url: string | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * SCM Comment for Scan Diff
+   * @deprecated
+   * @description **This endpoint is deprecated.**
+   *
+   * Get the dependency overview and dependency alert comments in GitHub flavored markdown between the diff between two existing full scans.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - full-scans:list
+   */
+  GetOrgFullScanDiffGfm: {
+    parameters: {
+      query: {
+        /** @description The head full scan ID (newer) */
+        after: string;
+        /** @description The base full scan ID (older) */
+        before: string;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description Metadata about the full scans and the dependency overview and dependency alert comment. Can be used in a pull request context. */
+      200: {
+        content: {
+          "application/json": {
+            before: {
+              /** @default */
+              id: string;
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+              /** @default */
+              organization_id: string;
+              /** @default */
+              organization_slug: string;
+              /** @default */
+              repository_id: string;
+              /** @default */
+              repository_slug: string;
+              /** @default */
+              branch: string | null;
+              /** @default */
+              commit_message: string | null;
+              /** @default */
+              commit_hash: string | null;
+              /** @default 0 */
+              pull_request: number | null;
+              committers: string[];
+              /** @default */
+              html_url: string | null;
+              /** @default */
+              api_url: string | null;
+            };
+            after: {
+              /** @default */
+              id: string;
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+              /** @default */
+              organization_id: string;
+              /** @default */
+              organization_slug: string;
+              /** @default */
+              repository_id: string;
+              /** @default */
+              repository_slug: string;
+              /** @default */
+              branch: string | null;
+              /** @default */
+              commit_message: string | null;
+              /** @default */
+              commit_hash: string | null;
+              /** @default 0 */
+              pull_request: number | null;
+              committers: string[];
+              /** @default */
+              html_url: string | null;
+              /** @default */
+              api_url: string | null;
+            };
+            comments: {
+              /** @default */
+              overview: string;
+              /** @default */
+              alerts: string;
+            };
+            /** @default false */
+            directDependenciesChanged: boolean;
+            /** @default */
+            diff_report_url: string | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * List diff scans
+   * @description Returns a paginated list of all diff scans in an organization.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - diff-scans:list
+   */
+  listOrgDiffScans: {
+    parameters: {
+      query?: {
+        /** @description Specify sort field. */
+        sort?: "created_at" | "updated_at";
+        /** @description Specify sort direction. */
+        direction?: "asc" | "desc";
+        /** @description Specify the maximum number of results to return per page. */
+        per_page?: number;
+        /** @description Cursor for pagination. Use the next_cursor or prev_cursor from previous responses. */
+        cursor?: string;
+        /** @description Filter by repository ID. */
+        repository_id?: string;
+        /** @description Filter by before full scan ID. */
+        before_full_scan_id?: string;
+        /** @description Filter by after full scan ID. */
+        after_full_scan_id?: string;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description Lists diff scans for the specified organization. */
+      200: {
+        content: {
+          "application/json": {
+            results: ({
+                /** @default */
+                id: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                before_full_scan_id: string;
+                /** @default */
+                after_full_scan_id: string;
+                /** @default */
+                description: string | null;
+                /** @default */
+                external_href: string | null;
+                /** @default false */
+                merge: boolean;
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              })[];
+            /** @default */
+            next_page_href: string | null;
+            /** @default */
+            next_cursor: string | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get diff scan
+   * @description Get the difference between two full scans from an existing diff scan resource.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - diff-scans:list
+   */
+  getDiffScanById: {
+    parameters: {
+      query?: {
+        /** @description Omit license details in the response. This can reduce the size of the response significantly, but will not include license information for the artifacts. */
+        omit_license_details?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the diff scan */
+        diff_scan_id: string;
+      };
+    };
+    responses: {
+      /** @description The difference between the two Full Scans in the diff scan. */
+      200: {
+        content: {
+          "application/json": {
+            diff_scan: {
+              /** @default */
+              id: string;
+              /** @default */
+              organization_id: string;
+              /** @default */
+              repository_id: string;
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+              before_full_scan: {
+                /** @default */
+                id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                organization_slug: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                repository_slug: string;
+                /** @default */
+                branch: string | null;
+                /** @default */
+                commit_message: string | null;
+                /** @default */
+                commit_hash: string | null;
+                /** @default 0 */
+                pull_request: number | null;
+                committers: string[];
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              };
+              after_full_scan: {
+                /** @default */
+                id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                organization_slug: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                repository_slug: string;
+                /** @default */
+                branch: string | null;
+                /** @default */
+                commit_message: string | null;
+                /** @default */
+                commit_hash: string | null;
+                /** @default 0 */
+                pull_request: number | null;
+                committers: string[];
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              };
+              /** @default */
+              description: string | null;
+              /** @default */
+              external_href: string | null;
+              /** @default false */
+              merge: boolean;
+              /** @default */
+              html_url: string | null;
+              /** @default */
+              api_url: string | null;
+              artifacts: {
+                added: components["schemas"]["SocketDiffArtifact"][];
+                removed: components["schemas"]["SocketDiffArtifact"][];
+                unchanged: components["schemas"]["SocketDiffArtifact"][];
+                replaced: components["schemas"]["SocketDiffArtifact"][];
+                updated: components["schemas"]["SocketDiffArtifact"][];
+              };
+            };
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Delete diff scan
+   * @description Delete an existing diff scan.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - diff-scans:delete
+   */
+  deleteOrgDiffScan: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the diff scan */
+        diff_scan_id: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": {
+            /** @default ok */
+            status: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * SCM Comment for Diff Scan
+   * @description Get the dependency overview and dependency alert comments in GitHub flavored markdown for an existing diff scan.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - diff-scans:list
+   */
+  GetDiffScanGfm: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the diff scan */
+        diff_scan_id: string;
+      };
+    };
+    responses: {
+      /** @description Metadata about the full scans and the dependency overview and dependency alert comment. Can be used in a pull request context. */
+      200: {
+        content: {
+          "application/json": {
+            diff_scan: {
+              /** @default */
+              id: string;
+              /** @default */
+              organization_id: string;
+              /** @default */
+              repository_id: string;
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+              before_full_scan: {
+                /** @default */
+                id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                organization_slug: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                repository_slug: string;
+                /** @default */
+                branch: string | null;
+                /** @default */
+                commit_message: string | null;
+                /** @default */
+                commit_hash: string | null;
+                /** @default 0 */
+                pull_request: number | null;
+                committers: string[];
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              };
+              after_full_scan: {
+                /** @default */
+                id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                organization_slug: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                repository_slug: string;
+                /** @default */
+                branch: string | null;
+                /** @default */
+                commit_message: string | null;
+                /** @default */
+                commit_hash: string | null;
+                /** @default 0 */
+                pull_request: number | null;
+                committers: string[];
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              };
+              /** @default */
+              description: string | null;
+              /** @default */
+              external_href: string | null;
+              /** @default false */
+              merge: boolean;
+              /** @default */
+              html_url: string | null;
+              /** @default */
+              api_url: string | null;
+              gfm: {
+                /** @default */
+                overview: string;
+                /** @default */
+                alerts: string;
+              };
+            };
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Create diff scan from repository HEAD full-scan
+   * @description Create a diff scan between the repository's current HEAD full scan and a new full scan from uploaded manifest files.
+   * Returns metadata about the diff scan. Once the diff scan is created, fetch the diff scan from
+   * the [api_url](/reference/getDiffScanById) URL to get the contents of the diff.
+   *
+   * The maximum number of files you can upload at a time is 5000 and each file can be no bigger than 16.8 MB.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   *       - repo:list
+   * - diff-scans:create
+   * - full-scans:create
+   */
+  createOrgRepoDiff: {
+    parameters: {
+      query?: {
+        /** @description A description of the diff scan. This will be used in the diff report and can be used to provide context for the changes made. */
+        description?: string;
+        /** @description An external URL to associate with the diff scan. This can be a link to a pull request, issue, or any other relevant resource. */
+        external_href?: string;
+        /** @description The branch name to associate the new full-scan with. Branch names must follow Git branch name rules: be 1–255 characters long; cannot be exactly @;  cannot begin or end with /, ., or .lock; cannot contain "//", "..", or "@{"; and cannot include control characters, spaces, or any of ~^:?*[. */
+        branch?: string;
+        /** @description The commit message to associate the new full-scan with. */
+        commit_message?: string;
+        /** @description The commit hash to associate the full-scan with. */
+        commit_hash?: string;
+        /** @description The pull request number to associate the new full-scan with. */
+        pull_request?: number;
+        /** @description The committers to associate the new full-scan with. Set query more than once to set multiple committers. */
+        committers?: string;
+        /** @description The integration type to associate the new full-scan with. Defaults to "api" if omitted. */
+        integration_type?: "api" | "github" | "gitlab" | "bitbucket" | "azure";
+        /** @description The integration org slug to associate the new full-scan with. If omitted, the Socket org name will be used. This is used to generate links and badges. */
+        integration_org_slug?: string;
+        /** @description Set to true when running a diff between a merged commit and its parent commit in the same branch. Set to false when running diffs in an open PR between unmerged commits. */
+        merge?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The slug of the repository */
+        repo_slug: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "multipart/form-data": {
+          [key: string]: never;
+        };
+      };
+    };
+    responses: {
+      /** @description The details of the new full scan and diff scan between the two scans. */
+      201: {
+        content: {
+          "application/json": {
+            diff_scan: {
+              /** @default */
+              id: string;
+              /** @default */
+              organization_id: string;
+              /** @default */
+              repository_id: string;
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+              before_full_scan: {
+                /** @default */
+                id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                organization_slug: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                repository_slug: string;
+                /** @default */
+                branch: string | null;
+                /** @default */
+                commit_message: string | null;
+                /** @default */
+                commit_hash: string | null;
+                /** @default 0 */
+                pull_request: number | null;
+                committers: string[];
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              };
+              after_full_scan: {
+                /** @default */
+                id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                organization_slug: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                repository_slug: string;
+                /** @default */
+                branch: string | null;
+                /** @default */
+                commit_message: string | null;
+                /** @default */
+                commit_hash: string | null;
+                /** @default 0 */
+                pull_request: number | null;
+                committers: string[];
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              };
+              /** @default */
+              description: string | null;
+              /** @default */
+              external_href: string | null;
+              /** @default false */
+              merge: boolean;
+              /** @default */
+              html_url: string | null;
+              /** @default */
+              api_url: string | null;
+            };
+            unmatchedAfterFiles: string[];
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Create diff scan from full scan IDs
+   * @description Create a diff scan from two existing full scan IDs. The full scans must be in the same repository.
+   * Returns metadata about the diff scan. Once the diff scan is created, fetch the diff scan from
+   * the [api_url](/reference/getDiffScanById) URL to get the contents of the diff.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   *       - diff-scans:create
+   * - full-scans:list
+   */
+  createOrgDiffScanFromIds: {
+    parameters: {
+      query: {
+        /** @description The ID of the before/base full scan (older) */
+        before: string;
+        /** @description The ID of the after/head full scan (newer) */
+        after: string;
+        /** @description A description of the diff scan. This will be used in the diff report and can be used to provide context for the changes made. */
+        description?: string;
+        /** @description An external URL to associate with the diff scan. This can be a link to a pull request, issue, or any other relevant resource. */
+        external_href?: string;
+        /** @description Set to true when running a diff between a merged commit and its parent commit in the same branch. Set to false when running diffs in an open PR between unmerged commits. */
+        merge?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The details of the created diff scan. */
+      201: {
+        content: {
+          "application/json": {
+            diff_scan: {
+              /** @default */
+              id: string;
+              /** @default */
+              organization_id: string;
+              /** @default */
+              repository_id: string;
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+              before_full_scan: {
+                /** @default */
+                id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                organization_slug: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                repository_slug: string;
+                /** @default */
+                branch: string | null;
+                /** @default */
+                commit_message: string | null;
+                /** @default */
+                commit_hash: string | null;
+                /** @default 0 */
+                pull_request: number | null;
+                committers: string[];
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              };
+              after_full_scan: {
+                /** @default */
+                id: string;
+                /** @default */
+                created_at: string;
+                /** @default */
+                updated_at: string;
+                /** @default */
+                organization_id: string;
+                /** @default */
+                organization_slug: string;
+                /** @default */
+                repository_id: string;
+                /** @default */
+                repository_slug: string;
+                /** @default */
+                branch: string | null;
+                /** @default */
+                commit_message: string | null;
+                /** @default */
+                commit_hash: string | null;
+                /** @default 0 */
+                pull_request: number | null;
+                committers: string[];
+                /** @default */
+                html_url: string | null;
+                /** @default */
+                api_url: string | null;
+              };
+              /** @default */
+              description: string | null;
+              /** @default */
+              external_href: string | null;
+              /** @default false */
+              merge: boolean;
+              /** @default */
+              html_url: string | null;
+              /** @default */
+              api_url: string | null;
+            };
           };
         };
       };
@@ -2852,7 +6177,7 @@ export interface operations {
                  * @description The ID of the head full scan of the repository
                  * @default
                  */
-                head_full_scan_id?: string;
+                head_full_scan_id?: string | null;
                 /**
                  * @description The name of the repository
                  * @default
@@ -2862,12 +6187,12 @@ export interface operations {
                  * @description The description of the repository
                  * @default
                  */
-                description?: string;
+                description?: string | null;
                 /**
                  * @description The homepage URL of the repository
                  * @default
                  */
-                homepage?: string;
+                homepage?: string | null;
                 /**
                  * @description The visibility of the repository
                  * @default private
@@ -2883,10 +6208,10 @@ export interface operations {
                  * @description The default branch of the repository
                  * @default main
                  */
-                default_branch?: string;
+                default_branch?: string | null;
               })[];
             /** @default 0 */
-            nextPage: number;
+            nextPage: number | null;
           };
         };
       };
@@ -2927,12 +6252,12 @@ export interface operations {
            * @description The description of the repository
            * @default
            */
-          description?: string;
+          description?: string | null;
           /**
            * @description The homepage URL of the repository
            * @default
            */
-          homepage?: string;
+          homepage?: string | null;
           /**
            * @description The visibility of the repository
            * @default private
@@ -2948,7 +6273,7 @@ export interface operations {
            * @description The default branch of the repository
            * @default main
            */
-          default_branch?: string;
+          default_branch?: string | null;
         };
       };
     };
@@ -2981,7 +6306,7 @@ export interface operations {
              * @description The ID of the head full scan of the repository
              * @default
              */
-            head_full_scan_id?: string;
+            head_full_scan_id?: string | null;
             /**
              * @description The name of the repository
              * @default
@@ -2991,12 +6316,12 @@ export interface operations {
              * @description The description of the repository
              * @default
              */
-            description?: string;
+            description?: string | null;
             /**
              * @description The homepage URL of the repository
              * @default
              */
-            homepage?: string;
+            homepage?: string | null;
             /**
              * @description The visibility of the repository
              * @default private
@@ -3012,7 +6337,7 @@ export interface operations {
              * @description The default branch of the repository
              * @default main
              */
-            default_branch?: string;
+            default_branch?: string | null;
           };
         };
       };
@@ -3050,58 +6375,63 @@ export interface operations {
              * @description The ID of the repository
              * @default
              */
-            id?: string;
+            id: string;
             /**
              * @description The creation date of the repository
              * @default
              */
-            created_at?: string;
+            created_at: string;
             /**
              * @description The last update date of the repository
              * @default
              */
-            updated_at?: string;
+            updated_at: string;
             /**
              * @description The slug of the repository
              * @default
              */
-            slug?: string;
+            slug: string;
             /**
              * @description The ID of the head full scan of the repository
              * @default
              */
-            head_full_scan_id?: string;
+            head_full_scan_id: string | null;
             /**
              * @description The name of the repository
              * @default
              */
-            name?: string;
+            name: string;
             /**
              * @description The description of the repository
              * @default
              */
-            description?: string;
+            description: string | null;
             /**
              * @description The homepage URL of the repository
              * @default
              */
-            homepage?: string;
+            homepage: string | null;
             /**
              * @description The visibility of the repository
              * @default private
              * @enum {string}
              */
-            visibility?: "public" | "private";
+            visibility: "public" | "private";
             /**
              * @description Whether the repository is archived or not
              * @default false
              */
-            archived?: boolean;
+            archived: boolean;
             /**
              * @description The default branch of the repository
              * @default main
              */
-            default_branch?: string;
+            default_branch: string | null;
+            /**
+             * @description The slug of the repository. This typo is intentionally preserved for backwards compatibility reasons.
+             * @default
+             */
+            slig: string;
           };
         };
       };
@@ -3142,12 +6472,12 @@ export interface operations {
            * @description The description of the repository
            * @default
            */
-          description?: string;
+          description?: string | null;
           /**
            * @description The homepage URL of the repository
            * @default
            */
-          homepage?: string;
+          homepage?: string | null;
           /**
            * @description The visibility of the repository
            * @default private
@@ -3163,12 +6493,12 @@ export interface operations {
            * @description The default branch of the repository
            * @default main
            */
-          default_branch?: string;
+          default_branch?: string | null;
         };
       };
     };
     responses: {
-      /** @description Update a repositories details */
+      /** @description Updated repository details */
       200: {
         content: {
           "application/json": {
@@ -3196,7 +6526,7 @@ export interface operations {
              * @description The ID of the head full scan of the repository
              * @default
              */
-            head_full_scan_id?: string;
+            head_full_scan_id?: string | null;
             /**
              * @description The name of the repository
              * @default
@@ -3206,12 +6536,12 @@ export interface operations {
              * @description The description of the repository
              * @default
              */
-            description?: string;
+            description?: string | null;
             /**
              * @description The homepage URL of the repository
              * @default
              */
-            homepage?: string;
+            homepage?: string | null;
             /**
              * @description The visibility of the repository
              * @default private
@@ -3227,7 +6557,7 @@ export interface operations {
              * @description The default branch of the repository
              * @default main
              */
-            default_branch?: string;
+            default_branch?: string | null;
           };
         };
       };
@@ -3274,8 +6604,5821 @@ export interface operations {
     };
   };
   /**
+   * Associate repository label (beta)
+   * @description Associate a repository label with a repository.
+   *
+   * Labels can be used to group and organize repositories and to apply security/license policies.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:update
+   */
+  associateOrgRepoLabel: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the label */
+        label_id: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          /**
+           * @description The ID of the repository to associate with the label
+           * @default
+           */
+          repository_id?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Associates a repository label with the specified repository. The authenticated user must be a member of the organization. */
+      200: {
+        content: {
+          "application/json": {
+            /**
+             * @description Status of the operation
+             * @default
+             */
+            status?: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * List repository labels (beta)
+   * @description Lists repository labels for the specified organization.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:list
+   */
+  getOrgRepoLabelList: {
+    parameters: {
+      query?: {
+        per_page?: number;
+        page?: number;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description Lists repository labels for the specified organization. The authenticated user must be a member of the organization. */
+      200: {
+        content: {
+          "application/json": {
+            results: {
+                /**
+                 * @description The ID of the label
+                 * @default
+                 */
+                id?: string;
+                /**
+                 * @description The name of the label
+                 * @default
+                 */
+                name?: string;
+                /** @description The IDs of repositories this label is associated with */
+                repository_ids?: string[];
+                /**
+                 * @description Whether the label has a security policy
+                 * @default false
+                 */
+                has_security_policy?: boolean;
+                /**
+                 * @description Whether the label has a license policy
+                 * @default false
+                 */
+                has_license_policy?: boolean;
+              }[];
+            /** @default 0 */
+            nextPage: number | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Create repository label (beta)
+   * @description Create a repository label.
+   *
+   * Labels can be used to group and organize repositories and to apply security/license policies.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:create
+   */
+  createOrgRepoLabel: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          /**
+           * @description The name of the label
+           * @default
+           */
+          name: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Creates a new repository label for the specified organization. The authenticated user must be a member of the organization. Label names must be non-empty and less than 1000 characters. */
+      201: {
+        content: {
+          "application/json": {
+            /**
+             * @description The ID of the label
+             * @default
+             */
+            id?: string;
+            /**
+             * @description The name of the label
+             * @default
+             */
+            name?: string;
+            /** @description The IDs of repositories this label is associated with */
+            repository_ids?: string[];
+            /**
+             * @description Whether the label has a security policy
+             * @default false
+             */
+            has_security_policy?: boolean;
+            /**
+             * @description Whether the label has a license policy
+             * @default false
+             */
+            has_license_policy?: boolean;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      /** @description Conflict */
+      409: {
+        content: {
+          "application/json": {
+            error: {
+              /** @default */
+              message: string;
+              /** @default null */
+              details: Record<string, unknown> | null;
+            };
+          };
+        };
+      };
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get repository label (beta)
+   * @description Retrieve a repository label associated with an organization and label ID.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:list
+   */
+  getOrgRepoLabel: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the label */
+        label_id: string;
+      };
+    };
+    responses: {
+      /** @description Returns a specific repository label for the specified organization. The authenticated user must be a member of the organization. */
+      200: {
+        content: {
+          "application/json": {
+            /**
+             * @description The ID of the label
+             * @default
+             */
+            id?: string;
+            /**
+             * @description The name of the label
+             * @default
+             */
+            name?: string;
+            /** @description The IDs of repositories this label is associated with */
+            repository_ids?: string[];
+            /**
+             * @description Whether the label has a security policy
+             * @default false
+             */
+            has_security_policy?: boolean;
+            /**
+             * @description Whether the label has a license policy
+             * @default false
+             */
+            has_license_policy?: boolean;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Update repository label (beta)
+   * @description Update a repository label name.
+   *
+   * Labels can be used to group and organize repositories and to apply security/license policies.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:update
+   */
+  updateOrgRepoLabel: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the label */
+        label_id: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          /**
+           * @description The name of the label
+           * @default
+           */
+          name: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Updates an existing repository label for the specified organization. The authenticated user must be a member of the organization. Label names must be non-empty and less than 1000 characters. */
+      200: {
+        content: {
+          "application/json": {
+            /**
+             * @description The ID of the label
+             * @default
+             */
+            id?: string;
+            /**
+             * @description The name of the label
+             * @default
+             */
+            name?: string;
+            /** @description The IDs of repositories this label is associated with */
+            repository_ids?: string[];
+            /**
+             * @description Whether the label has a security policy
+             * @default false
+             */
+            has_security_policy?: boolean;
+            /**
+             * @description Whether the label has a license policy
+             * @default false
+             */
+            has_license_policy?: boolean;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      /** @description Conflict */
+      409: {
+        content: {
+          "application/json": {
+            error: {
+              /** @default */
+              message: string;
+              /** @default null */
+              details: Record<string, unknown> | null;
+            };
+          };
+        };
+      };
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Delete repository label (beta)
+   * @description Delete a repository label and all of its associations (repositories, security policy, license policy, etc.).
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:delete
+   */
+  deleteOrgRepoLabel: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the label */
+        label_id: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": {
+            /** @default ok */
+            status: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get repository label setting (beta)
+   * @description Retrieve the setting (e.g. security/license policy) for a repository label.
+   *
+   *
+   * Note that repository label settings currently only support `issueRules`
+   * and `issueRulesPolicyDefault`. A policy is considered "active" for
+   * a given repository label if the `issueRulesPolicyDefault` is set,
+   * and inactive when not set. `issueRules` can be used to further
+   * refine the alert triage strategy.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:list
+   */
+  getOrgRepoLabelSetting: {
+    parameters: {
+      query: {
+        /** @description Setting key to query for in the repository label. Valid values include issueRules, issueRulesPolicyDefault, and licensePolicy */
+        setting_key: string;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the label */
+        label_id: string;
+      };
+    };
+    responses: {
+      /** @description Returns the setting for the specified repository label. The authenticated user must be a member of the organization. */
+      200: {
+        content: {
+          "application/json": {
+            issueRules?: ({
+              gptSecurity?: {
+                /**
+                 * @description The action to take for gptSecurity issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptAnomaly?: {
+                /**
+                 * @description The action to take for gptAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptMalware?: {
+                /**
+                 * @description The action to take for gptMalware issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              filesystemAccess?: {
+                /**
+                 * @description The action to take for filesystemAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              networkAccess?: {
+                /**
+                 * @description The action to take for networkAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shellAccess?: {
+                /**
+                 * @description The action to take for shellAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              debugAccess?: {
+                /**
+                 * @description The action to take for debugAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromePermission?: {
+                /**
+                 * @description The action to take for chromePermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeHostPermission?: {
+                /**
+                 * @description The action to take for chromeHostPermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeWildcardHostPermission?: {
+                /**
+                 * @description The action to take for chromeWildcardHostPermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeContentScript?: {
+                /**
+                 * @description The action to take for chromeContentScript issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              criticalCVE?: {
+                /**
+                 * @description The action to take for criticalCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              cve?: {
+                /**
+                 * @description The action to take for cve issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mediumCVE?: {
+                /**
+                 * @description The action to take for mediumCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mildCVE?: {
+                /**
+                 * @description The action to take for mildCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              emptyPackage?: {
+                /**
+                 * @description The action to take for emptyPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              trivialPackage?: {
+                /**
+                 * @description The action to take for trivialPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noREADME?: {
+                /**
+                 * @description The action to take for noREADME issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shrinkwrap?: {
+                /**
+                 * @description The action to take for shrinkwrap issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseSpdxDisj?: {
+                /**
+                 * @description The action to take for licenseSpdxDisj issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unsafeCopyright?: {
+                /**
+                 * @description The action to take for unsafeCopyright issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseChange?: {
+                /**
+                 * @description The action to take for licenseChange issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonOSILicense?: {
+                /**
+                 * @description The action to take for nonOSILicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecatedLicense?: {
+                /**
+                 * @description The action to take for deprecatedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingLicense?: {
+                /**
+                 * @description The action to take for missingLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonSPDXLicense?: {
+                /**
+                 * @description The action to take for nonSPDXLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unclearLicense?: {
+                /**
+                 * @description The action to take for unclearLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mixedLicense?: {
+                /**
+                 * @description The action to take for mixedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              notice?: {
+                /**
+                 * @description The action to take for notice issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              modifiedLicense?: {
+                /**
+                 * @description The action to take for modifiedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              modifiedException?: {
+                /**
+                 * @description The action to take for modifiedException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseException?: {
+                /**
+                 * @description The action to take for licenseException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecatedException?: {
+                /**
+                 * @description The action to take for deprecatedException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              miscLicenseIssues?: {
+                /**
+                 * @description The action to take for miscLicenseIssues issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unidentifiedLicense?: {
+                /**
+                 * @description The action to take for unidentifiedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noLicenseFound?: {
+                /**
+                 * @description The action to take for noLicenseFound issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              explicitlyUnlicensedItem?: {
+                /**
+                 * @description The action to take for explicitlyUnlicensedItem issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              copyleftLicense?: {
+                /**
+                 * @description The action to take for copyleftLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonpermissiveLicense?: {
+                /**
+                 * @description The action to take for nonpermissiveLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              ambiguousClassifier?: {
+                /**
+                 * @description The action to take for ambiguousClassifier issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              invalidPackageJSON?: {
+                /**
+                 * @description The action to take for invalidPackageJSON issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              httpDependency?: {
+                /**
+                 * @description The action to take for httpDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gitDependency?: {
+                /**
+                 * @description The action to take for gitDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gitHubDependency?: {
+                /**
+                 * @description The action to take for gitHubDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              fileDependency?: {
+                /**
+                 * @description The action to take for fileDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noTests?: {
+                /**
+                 * @description The action to take for noTests issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noRepository?: {
+                /**
+                 * @description The action to take for noRepository issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badSemver?: {
+                /**
+                 * @description The action to take for badSemver issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badSemverDependency?: {
+                /**
+                 * @description The action to take for badSemverDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noV1?: {
+                /**
+                 * @description The action to take for noV1 issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noWebsite?: {
+                /**
+                 * @description The action to take for noWebsite issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noBugTracker?: {
+                /**
+                 * @description The action to take for noBugTracker issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noAuthorData?: {
+                /**
+                 * @description The action to take for noAuthorData issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              typeModuleCompatibility?: {
+                /**
+                 * @description The action to take for typeModuleCompatibility issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              floatingDependency?: {
+                /**
+                 * @description The action to take for floatingDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              manifestConfusion?: {
+                /**
+                 * @description The action to take for manifestConfusion issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              malware?: {
+                /**
+                 * @description The action to take for malware issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              telemetry?: {
+                /**
+                 * @description The action to take for telemetry issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              troll?: {
+                /**
+                 * @description The action to take for troll issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecated?: {
+                /**
+                 * @description The action to take for deprecated issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chronoAnomaly?: {
+                /**
+                 * @description The action to take for chronoAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              compromisedSSHKey?: {
+                /**
+                 * @description The action to take for compromisedSSHKey issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              semverAnomaly?: {
+                /**
+                 * @description The action to take for semverAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              newAuthor?: {
+                /**
+                 * @description The action to take for newAuthor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unstableOwnership?: {
+                /**
+                 * @description The action to take for unstableOwnership issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingAuthor?: {
+                /**
+                 * @description The action to take for missingAuthor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unmaintained?: {
+                /**
+                 * @description The action to take for unmaintained issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unpublished?: {
+                /**
+                 * @description The action to take for unpublished issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              majorRefactor?: {
+                /**
+                 * @description The action to take for majorRefactor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingTarball?: {
+                /**
+                 * @description The action to take for missingTarball issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              suspiciousStarActivity?: {
+                /**
+                 * @description The action to take for suspiciousStarActivity issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unpopularPackage?: {
+                /**
+                 * @description The action to take for unpopularPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              socketUpgradeAvailable?: {
+                /**
+                 * @description The action to take for socketUpgradeAvailable issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              longStrings?: {
+                /**
+                 * @description The action to take for longStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              highEntropyStrings?: {
+                /**
+                 * @description The action to take for highEntropyStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              urlStrings?: {
+                /**
+                 * @description The action to take for urlStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              usesEval?: {
+                /**
+                 * @description The action to take for usesEval issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              dynamicRequire?: {
+                /**
+                 * @description The action to take for dynamicRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              envVars?: {
+                /**
+                 * @description The action to take for envVars issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingDependency?: {
+                /**
+                 * @description The action to take for missingDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unusedDependency?: {
+                /**
+                 * @description The action to take for unusedDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              peerDependency?: {
+                /**
+                 * @description The action to take for peerDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              uncaughtOptionalDependency?: {
+                /**
+                 * @description The action to take for uncaughtOptionalDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unresolvedRequire?: {
+                /**
+                 * @description The action to take for unresolvedRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              extraneousDependency?: {
+                /**
+                 * @description The action to take for extraneousDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              obfuscatedRequire?: {
+                /**
+                 * @description The action to take for obfuscatedRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              obfuscatedFile?: {
+                /**
+                 * @description The action to take for obfuscatedFile issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              minifiedFile?: {
+                /**
+                 * @description The action to take for minifiedFile issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              installScripts?: {
+                /**
+                 * @description The action to take for installScripts issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              hasNativeCode?: {
+                /**
+                 * @description The action to take for hasNativeCode issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              binScriptConfusion?: {
+                /**
+                 * @description The action to take for binScriptConfusion issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shellScriptOverride?: {
+                /**
+                 * @description The action to take for shellScriptOverride issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              didYouMean?: {
+                /**
+                 * @description The action to take for didYouMean issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptDidYouMean?: {
+                /**
+                 * @description The action to take for gptDidYouMean issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              bidi?: {
+                /**
+                 * @description The action to take for bidi issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              zeroWidth?: {
+                /**
+                 * @description The action to take for zeroWidth issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badEncoding?: {
+                /**
+                 * @description The action to take for badEncoding issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              homoglyphs?: {
+                /**
+                 * @description The action to take for homoglyphs issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              invisibleChars?: {
+                /**
+                 * @description The action to take for invisibleChars issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              suspiciousString?: {
+                /**
+                 * @description The action to take for suspiciousString issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              potentialVulnerability?: {
+                /**
+                 * @description The action to take for potentialVulnerability issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+            }) | null;
+            /**
+             * @description The default security policy for the repository label
+             * @default medium
+             * @enum {string|null}
+             */
+            issueRulesPolicyDefault?: "default" | "low" | "medium" | "high" | null;
+            /** @default null */
+            licensePolicy?: Record<string, unknown> | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Update repository label setting (beta)
+   * @description Update the setting (e.g. security/license policy) for a repository label.
+   *
+   *
+   * Note that repository label settings currently only support `issueRules`
+   * and `issueRulesPolicyDefault`. A policy is considered "active" for
+   * a given repository label if the `issueRulesPolicyDefault` is set,
+   * and inactive when not set. `issueRules` can be used to further
+   * refine the alert triage strategy.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:update
+   */
+  updateOrgRepoLabelSetting: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the label */
+        label_id: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          issueRules?: {
+            gptSecurity?: {
+              /**
+               * @description The action to take for gptSecurity issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gptAnomaly?: {
+              /**
+               * @description The action to take for gptAnomaly issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gptMalware?: {
+              /**
+               * @description The action to take for gptMalware issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            filesystemAccess?: {
+              /**
+               * @description The action to take for filesystemAccess issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            networkAccess?: {
+              /**
+               * @description The action to take for networkAccess issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            shellAccess?: {
+              /**
+               * @description The action to take for shellAccess issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            debugAccess?: {
+              /**
+               * @description The action to take for debugAccess issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chromePermission?: {
+              /**
+               * @description The action to take for chromePermission issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chromeHostPermission?: {
+              /**
+               * @description The action to take for chromeHostPermission issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chromeWildcardHostPermission?: {
+              /**
+               * @description The action to take for chromeWildcardHostPermission issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chromeContentScript?: {
+              /**
+               * @description The action to take for chromeContentScript issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            criticalCVE?: {
+              /**
+               * @description The action to take for criticalCVE issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            cve?: {
+              /**
+               * @description The action to take for cve issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            mediumCVE?: {
+              /**
+               * @description The action to take for mediumCVE issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            mildCVE?: {
+              /**
+               * @description The action to take for mildCVE issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            emptyPackage?: {
+              /**
+               * @description The action to take for emptyPackage issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            trivialPackage?: {
+              /**
+               * @description The action to take for trivialPackage issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noREADME?: {
+              /**
+               * @description The action to take for noREADME issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            shrinkwrap?: {
+              /**
+               * @description The action to take for shrinkwrap issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            licenseSpdxDisj?: {
+              /**
+               * @description The action to take for licenseSpdxDisj issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unsafeCopyright?: {
+              /**
+               * @description The action to take for unsafeCopyright issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            licenseChange?: {
+              /**
+               * @description The action to take for licenseChange issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            nonOSILicense?: {
+              /**
+               * @description The action to take for nonOSILicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            deprecatedLicense?: {
+              /**
+               * @description The action to take for deprecatedLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            missingLicense?: {
+              /**
+               * @description The action to take for missingLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            nonSPDXLicense?: {
+              /**
+               * @description The action to take for nonSPDXLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unclearLicense?: {
+              /**
+               * @description The action to take for unclearLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            mixedLicense?: {
+              /**
+               * @description The action to take for mixedLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            notice?: {
+              /**
+               * @description The action to take for notice issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            modifiedLicense?: {
+              /**
+               * @description The action to take for modifiedLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            modifiedException?: {
+              /**
+               * @description The action to take for modifiedException issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            licenseException?: {
+              /**
+               * @description The action to take for licenseException issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            deprecatedException?: {
+              /**
+               * @description The action to take for deprecatedException issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            miscLicenseIssues?: {
+              /**
+               * @description The action to take for miscLicenseIssues issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unidentifiedLicense?: {
+              /**
+               * @description The action to take for unidentifiedLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noLicenseFound?: {
+              /**
+               * @description The action to take for noLicenseFound issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            explicitlyUnlicensedItem?: {
+              /**
+               * @description The action to take for explicitlyUnlicensedItem issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            copyleftLicense?: {
+              /**
+               * @description The action to take for copyleftLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            nonpermissiveLicense?: {
+              /**
+               * @description The action to take for nonpermissiveLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            ambiguousClassifier?: {
+              /**
+               * @description The action to take for ambiguousClassifier issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            invalidPackageJSON?: {
+              /**
+               * @description The action to take for invalidPackageJSON issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            httpDependency?: {
+              /**
+               * @description The action to take for httpDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gitDependency?: {
+              /**
+               * @description The action to take for gitDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gitHubDependency?: {
+              /**
+               * @description The action to take for gitHubDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            fileDependency?: {
+              /**
+               * @description The action to take for fileDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noTests?: {
+              /**
+               * @description The action to take for noTests issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noRepository?: {
+              /**
+               * @description The action to take for noRepository issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            badSemver?: {
+              /**
+               * @description The action to take for badSemver issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            badSemverDependency?: {
+              /**
+               * @description The action to take for badSemverDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noV1?: {
+              /**
+               * @description The action to take for noV1 issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noWebsite?: {
+              /**
+               * @description The action to take for noWebsite issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noBugTracker?: {
+              /**
+               * @description The action to take for noBugTracker issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noAuthorData?: {
+              /**
+               * @description The action to take for noAuthorData issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            typeModuleCompatibility?: {
+              /**
+               * @description The action to take for typeModuleCompatibility issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            floatingDependency?: {
+              /**
+               * @description The action to take for floatingDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            manifestConfusion?: {
+              /**
+               * @description The action to take for manifestConfusion issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            malware?: {
+              /**
+               * @description The action to take for malware issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            telemetry?: {
+              /**
+               * @description The action to take for telemetry issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            troll?: {
+              /**
+               * @description The action to take for troll issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            deprecated?: {
+              /**
+               * @description The action to take for deprecated issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chronoAnomaly?: {
+              /**
+               * @description The action to take for chronoAnomaly issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            compromisedSSHKey?: {
+              /**
+               * @description The action to take for compromisedSSHKey issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            semverAnomaly?: {
+              /**
+               * @description The action to take for semverAnomaly issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            newAuthor?: {
+              /**
+               * @description The action to take for newAuthor issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unstableOwnership?: {
+              /**
+               * @description The action to take for unstableOwnership issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            missingAuthor?: {
+              /**
+               * @description The action to take for missingAuthor issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unmaintained?: {
+              /**
+               * @description The action to take for unmaintained issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unpublished?: {
+              /**
+               * @description The action to take for unpublished issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            majorRefactor?: {
+              /**
+               * @description The action to take for majorRefactor issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            missingTarball?: {
+              /**
+               * @description The action to take for missingTarball issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            suspiciousStarActivity?: {
+              /**
+               * @description The action to take for suspiciousStarActivity issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unpopularPackage?: {
+              /**
+               * @description The action to take for unpopularPackage issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            socketUpgradeAvailable?: {
+              /**
+               * @description The action to take for socketUpgradeAvailable issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            longStrings?: {
+              /**
+               * @description The action to take for longStrings issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            highEntropyStrings?: {
+              /**
+               * @description The action to take for highEntropyStrings issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            urlStrings?: {
+              /**
+               * @description The action to take for urlStrings issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            usesEval?: {
+              /**
+               * @description The action to take for usesEval issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            dynamicRequire?: {
+              /**
+               * @description The action to take for dynamicRequire issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            envVars?: {
+              /**
+               * @description The action to take for envVars issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            missingDependency?: {
+              /**
+               * @description The action to take for missingDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unusedDependency?: {
+              /**
+               * @description The action to take for unusedDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            peerDependency?: {
+              /**
+               * @description The action to take for peerDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            uncaughtOptionalDependency?: {
+              /**
+               * @description The action to take for uncaughtOptionalDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unresolvedRequire?: {
+              /**
+               * @description The action to take for unresolvedRequire issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            extraneousDependency?: {
+              /**
+               * @description The action to take for extraneousDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            obfuscatedRequire?: {
+              /**
+               * @description The action to take for obfuscatedRequire issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            obfuscatedFile?: {
+              /**
+               * @description The action to take for obfuscatedFile issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            minifiedFile?: {
+              /**
+               * @description The action to take for minifiedFile issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            installScripts?: {
+              /**
+               * @description The action to take for installScripts issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            hasNativeCode?: {
+              /**
+               * @description The action to take for hasNativeCode issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            binScriptConfusion?: {
+              /**
+               * @description The action to take for binScriptConfusion issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            shellScriptOverride?: {
+              /**
+               * @description The action to take for shellScriptOverride issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            didYouMean?: {
+              /**
+               * @description The action to take for didYouMean issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gptDidYouMean?: {
+              /**
+               * @description The action to take for gptDidYouMean issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            bidi?: {
+              /**
+               * @description The action to take for bidi issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            zeroWidth?: {
+              /**
+               * @description The action to take for zeroWidth issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            badEncoding?: {
+              /**
+               * @description The action to take for badEncoding issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            homoglyphs?: {
+              /**
+               * @description The action to take for homoglyphs issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            invisibleChars?: {
+              /**
+               * @description The action to take for invisibleChars issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            suspiciousString?: {
+              /**
+               * @description The action to take for suspiciousString issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            potentialVulnerability?: {
+              /**
+               * @description The action to take for potentialVulnerability issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+          };
+          /**
+           * @description The default security policy for the repository label
+           * @default medium
+           * @enum {string}
+           */
+          issueRulesPolicyDefault?: "default" | "low" | "medium" | "high";
+        };
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": {
+            /** @default ok */
+            status: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Delete repository label setting (beta)
+   * @description Delete the setting (e.g. security/license policy) for a repository label.
+   *
+   *
+   * Note that repository label settings currently only support `issueRules`
+   * and `issueRulesPolicyDefault`. A policy is considered "active" for
+   * a given repository label if the `issueRulesPolicyDefault` is set,
+   * and inactive when not set. `issueRules` can be used to further
+   * refine the alert triage strategy.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:update
+   */
+  deleteOrgRepoLabelSetting: {
+    parameters: {
+      query: {
+        /** @description Setting key to delete from the repository label. Valid values include issueRules, issueRulesPolicyDefault, and licensePolicy */
+        setting_key: string;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the label */
+        label_id: string;
+      };
+    };
+    responses: {
+      /** @description Success */
+      200: {
+        content: {
+          "application/json": {
+            /** @default ok */
+            status: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Disassociate repository label (beta)
+   * @description Disassociate a repository label from a repository.
+   *
+   * Labels can be used to group and organize repositories and to apply security/license policies.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - repo-label:update
+   */
+  disassociateOrgRepoLabel: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The ID of the label */
+        label_id: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          /**
+           * @description The ID of the repository to disassociate from the label
+           * @default
+           */
+          repository_id?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Disassociates a repository label from the specified repository. The authenticated user must be a member of the organization. */
+      200: {
+        content: {
+          "application/json": {
+            /**
+             * @description Status of the operation
+             * @default
+             */
+            status?: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * List Org Alert Triage
+   * @description Get alert triage actions for an organization.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - triage:alerts-list
+   */
+  getOrgTriage: {
+    parameters: {
+      query?: {
+        sort?: string;
+        direction?: string;
+        per_page?: number;
+        page?: number;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description Lists triage actions for the specified organization. */
+      200: {
+        content: {
+          "application/json": {
+            results: ({
+                /**
+                 * @description The alert_key associated with the triage state
+                 * @default
+                 */
+                alert_key?: string;
+                /**
+                 * @description The creation date of the triage action
+                 * @default
+                 */
+                created_at?: string;
+                /**
+                 * @description The last update date of the triage action
+                 * @default
+                 */
+                updated_at?: string;
+                /**
+                 * @description The note associated with the triage action
+                 * @default
+                 */
+                note?: string;
+                /**
+                 * @description The organization id associated with the triage action
+                 * @default
+                 */
+                organization_id?: string;
+                /**
+                 * @description The triage state of the alert
+                 * @default inherit
+                 * @enum {string}
+                 */
+                state?: "block" | "ignore" | "inherit" | "monitor" | "warn";
+              })[];
+            /** @default 0 */
+            nextPage: number | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Update Org Alert Triage
+   * @description Update triage actions on organizaton alerts.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - triage:alerts-update
+   */
+  updateOrgAlertTriage: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          alertTriage: ({
+              /** @default */
+              alertKey?: string;
+              /** @default */
+              note?: string;
+              /**
+               * @description The triage state of the alert
+               * @enum {string}
+               */
+              state?: "block" | "ignore" | "inherit" | "monitor" | "warn";
+            })[];
+        };
+      };
+    };
+    responses: {
+      /** @description Updated Alert Triage */
+      202: {
+        content: {
+          "application/json": {
+            /** @default */
+            result: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * List API Tokens
+   * @description List all API Tokens.
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - api-tokens:list
+   */
+  getAPITokens: {
+    parameters: {
+      query?: {
+        /** @description Specify Sort order. */
+        sort?: "created_at";
+        /** @description Specify sort direction. */
+        direction?: "asc" | "desc";
+        /** @description Specify the maximum number of results to return per page. */
+        per_page?: number;
+        /** @description The token specifying which page to return. */
+        page?: number;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The paginated array of API tokens for the organization, and related metadata. */
+      200: {
+        content: {
+          "application/json": {
+            tokens: ({
+                committers: ({
+                    /** @default */
+                    email?: string;
+                    /**
+                     * @default api
+                     * @enum {string}
+                     */
+                    provider?: "api" | "azure" | "bitbucket" | "github" | "gitlab";
+                    /** @default */
+                    providerLoginName?: string;
+                    /** @default */
+                    providerUserId?: string;
+                  })[];
+                /**
+                 * Format: date
+                 * @default
+                 */
+                created_at: string;
+                /**
+                 * @description The ID of the API Token
+                 * @default
+                 */
+                id: string;
+                /**
+                 * Format: date
+                 * @default
+                 */
+                last_used_at: string;
+                /** @default 1000 */
+                max_quota: number;
+                /**
+                 * @description Name for the API Token
+                 * @default api token
+                 */
+                name: string | null;
+                scopes: ("alerts" | "alerts:list" | "alerts:trend" | "api-tokens" | "api-tokens:create" | "api-tokens:update" | "api-tokens:revoke" | "api-tokens:rotate" | "api-tokens:list" | "audit-log" | "audit-log:list" | "dependencies" | "dependencies:list" | "dependencies:trend" | "full-scans" | "full-scans:list" | "full-scans:create" | "full-scans:delete" | "diff-scans" | "diff-scans:list" | "diff-scans:create" | "diff-scans:delete" | "historical" | "historical:snapshots-list" | "historical:snapshots-start" | "historical:alerts-list" | "historical:alerts-trend" | "historical:dependencies-list" | "historical:dependencies-trend" | "integration" | "integration:list" | "integration:create" | "integration:update" | "integration:delete" | "license-policy" | "license-policy:update" | "license-policy:read" | "packages" | "packages:list" | "report" | "report:list" | "report:read" | "report:write" | "repo" | "repo:list" | "repo:create" | "repo:update" | "repo:delete" | "repo-label" | "repo-label:list" | "repo-label:create" | "repo-label:update" | "repo-label:delete" | "security-policy" | "security-policy:update" | "security-policy:read" | "threat-feed" | "threat-feed:list" | "triage" | "triage:alerts-list" | "triage:alerts-update")[];
+                /**
+                 * @description The obfuscated token of the API Token
+                 * @default
+                 */
+                token: string;
+                /**
+                 * @description The visibility of the API Token. Warning: this field is deprecated and will be removed in the future.
+                 * @default organization
+                 * @enum {string}
+                 */
+                visibility: "admin" | "organization";
+              })[];
+            /** @default 0 */
+            nextPage: number | null;
+          };
+        };
+      };
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Create API Token
+   * @description Create an API Token. The API Token created must use a subset of permissions the API token creating them.
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - api-tokens:create
+   */
+  postAPIToken: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    /** @description The settings to create the api token with. */
+    requestBody?: {
+      content: {
+        "application/json": {
+          /** @default 1000 */
+          max_quota: number;
+          scopes: ("alerts" | "alerts:list" | "alerts:trend" | "api-tokens" | "api-tokens:create" | "api-tokens:update" | "api-tokens:revoke" | "api-tokens:rotate" | "api-tokens:list" | "audit-log" | "audit-log:list" | "dependencies" | "dependencies:list" | "dependencies:trend" | "full-scans" | "full-scans:list" | "full-scans:create" | "full-scans:delete" | "diff-scans" | "diff-scans:list" | "diff-scans:create" | "diff-scans:delete" | "historical" | "historical:snapshots-list" | "historical:snapshots-start" | "historical:alerts-list" | "historical:alerts-trend" | "historical:dependencies-list" | "historical:dependencies-trend" | "integration" | "integration:list" | "integration:create" | "integration:update" | "integration:delete" | "license-policy" | "license-policy:update" | "license-policy:read" | "packages" | "packages:list" | "report" | "report:list" | "report:read" | "report:write" | "repo" | "repo:list" | "repo:create" | "repo:update" | "repo:delete" | "repo-label" | "repo-label:list" | "repo-label:create" | "repo-label:update" | "repo-label:delete" | "security-policy" | "security-policy:update" | "security-policy:read" | "threat-feed" | "threat-feed:list" | "triage" | "triage:alerts-list" | "triage:alerts-update")[];
+          /** @default */
+          token: string;
+          /**
+           * @description The visibility of the API Token. Warning: this field is deprecated and will be removed in the future.
+           * @default organization
+           * @enum {string}
+           */
+          visibility: "admin" | "organization";
+          committer: {
+            /** @default */
+            email?: string;
+            /**
+             * @default api
+             * @enum {string}
+             */
+            provider?: "api" | "azure" | "bitbucket" | "github" | "gitlab";
+            /** @default */
+            providerLoginName?: string;
+            /** @default */
+            providerUserId?: string;
+          };
+          /**
+           * @description Name for the API Token
+           * @default api token
+           */
+          name?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description The newly created api token. */
+      200: {
+        content: {
+          "application/json": {
+            /** @default */
+            token: string;
+          };
+        };
+      };
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Update API Token
+   * @description Update an API Token. The API Token created must use a subset of permissions the API token creating them.
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - api-tokens:create
+   */
+  postAPITokenUpdate: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    /** @description The token and properties to update on the token. */
+    requestBody?: {
+      content: {
+        "application/json": {
+          /** @default 1000 */
+          max_quota: number;
+          scopes: ("alerts" | "alerts:list" | "alerts:trend" | "api-tokens" | "api-tokens:create" | "api-tokens:update" | "api-tokens:revoke" | "api-tokens:rotate" | "api-tokens:list" | "audit-log" | "audit-log:list" | "dependencies" | "dependencies:list" | "dependencies:trend" | "full-scans" | "full-scans:list" | "full-scans:create" | "full-scans:delete" | "diff-scans" | "diff-scans:list" | "diff-scans:create" | "diff-scans:delete" | "historical" | "historical:snapshots-list" | "historical:snapshots-start" | "historical:alerts-list" | "historical:alerts-trend" | "historical:dependencies-list" | "historical:dependencies-trend" | "integration" | "integration:list" | "integration:create" | "integration:update" | "integration:delete" | "license-policy" | "license-policy:update" | "license-policy:read" | "packages" | "packages:list" | "report" | "report:list" | "report:read" | "report:write" | "repo" | "repo:list" | "repo:create" | "repo:update" | "repo:delete" | "repo-label" | "repo-label:list" | "repo-label:create" | "repo-label:update" | "repo-label:delete" | "security-policy" | "security-policy:update" | "security-policy:read" | "threat-feed" | "threat-feed:list" | "triage" | "triage:alerts-list" | "triage:alerts-update")[];
+          /** @default */
+          token: string;
+          /**
+           * @description The visibility of the API Token. Warning: this field is deprecated and will be removed in the future.
+           * @default organization
+           * @enum {string}
+           */
+          visibility: "admin" | "organization";
+          committer: {
+            /** @default */
+            email?: string;
+            /**
+             * @default api
+             * @enum {string}
+             */
+            provider?: "api" | "azure" | "bitbucket" | "github" | "gitlab";
+            /** @default */
+            providerLoginName?: string;
+            /** @default */
+            providerUserId?: string;
+          };
+          /**
+           * @description Name for the API Token
+           * @default api token
+           */
+          name?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description The updated token. */
+      200: {
+        content: {
+          "application/json": {
+            /** @default */
+            token: string;
+          };
+        };
+      };
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Rotate API Token
+   * @description Rotate an API Token
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - api-tokens:rotate
+   */
+  postAPITokensRotate: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    /** @description The API Token to rotate */
+    requestBody?: {
+      content: {
+        "application/json": {
+          /** @default */
+          token: string;
+        };
+      };
+    };
+    responses: {
+      /** @description The replacement API Token */
+      200: {
+        content: {
+          "application/json": {
+            /** @default */
+            token: string;
+          };
+        };
+      };
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Revoke API Token
+   * @description Revoke an API Token
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - api-tokens:revoke
+   */
+  postAPITokensRevoke: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    /** @description The token to revoke. */
+    requestBody?: {
+      content: {
+        "application/json": {
+          /** @default */
+          token: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Response body */
+      200: {
+        content: {
+          "application/json": {
+            /**
+             * Format: The status of the token
+             * @default revoked
+             */
+            status: string;
+          };
+        };
+      };
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get integration events
+   * @description This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - integration:list
+   */
+  getIntegrationEvents: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+        /** @description The id of the integration */
+        integration_id: string;
+      };
+    };
+    responses: {
+      /** @description Lists events for the specified integration. The authenticated user must be a member of the organization. */
+      200: {
+        content: {
+          "application/json": {
+              /** @default */
+              id: string;
+              /** @default */
+              integration_id: string;
+              /** @default */
+              type: string;
+              payload: Record<string, never>;
+              /** @default 0 */
+              status_code: number;
+              /** @default */
+              error: string;
+              /** @default */
+              sent_at: string;
+              retry_info: {
+                  /** @default 0 */
+                  status_code: number;
+                  /** @default */
+                  error: string;
+                  /** @default */
+                  sent_at: string;
+                }[];
+              /** @default */
+              created_at: string;
+              /** @default */
+              updated_at: string;
+            }[];
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get Organization Security Policy
+   * @description Retrieve the security policy of an organization.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - security-policy:read
+   */
+  getOrgSecurityPolicy: {
+    parameters: {
+      query?: {
+        /** @description Return only customized security policy rules. */
+        custom_rules_only?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description Retrieved security policy details */
+      200: {
+        content: {
+          "application/json": {
+            securityPolicyRules?: {
+              gptSecurity?: {
+                /**
+                 * @description The action to take for gptSecurity issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptAnomaly?: {
+                /**
+                 * @description The action to take for gptAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptMalware?: {
+                /**
+                 * @description The action to take for gptMalware issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              filesystemAccess?: {
+                /**
+                 * @description The action to take for filesystemAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              networkAccess?: {
+                /**
+                 * @description The action to take for networkAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shellAccess?: {
+                /**
+                 * @description The action to take for shellAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              debugAccess?: {
+                /**
+                 * @description The action to take for debugAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromePermission?: {
+                /**
+                 * @description The action to take for chromePermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeHostPermission?: {
+                /**
+                 * @description The action to take for chromeHostPermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeWildcardHostPermission?: {
+                /**
+                 * @description The action to take for chromeWildcardHostPermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeContentScript?: {
+                /**
+                 * @description The action to take for chromeContentScript issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              criticalCVE?: {
+                /**
+                 * @description The action to take for criticalCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              cve?: {
+                /**
+                 * @description The action to take for cve issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mediumCVE?: {
+                /**
+                 * @description The action to take for mediumCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mildCVE?: {
+                /**
+                 * @description The action to take for mildCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              emptyPackage?: {
+                /**
+                 * @description The action to take for emptyPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              trivialPackage?: {
+                /**
+                 * @description The action to take for trivialPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noREADME?: {
+                /**
+                 * @description The action to take for noREADME issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shrinkwrap?: {
+                /**
+                 * @description The action to take for shrinkwrap issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseSpdxDisj?: {
+                /**
+                 * @description The action to take for licenseSpdxDisj issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unsafeCopyright?: {
+                /**
+                 * @description The action to take for unsafeCopyright issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseChange?: {
+                /**
+                 * @description The action to take for licenseChange issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonOSILicense?: {
+                /**
+                 * @description The action to take for nonOSILicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecatedLicense?: {
+                /**
+                 * @description The action to take for deprecatedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingLicense?: {
+                /**
+                 * @description The action to take for missingLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonSPDXLicense?: {
+                /**
+                 * @description The action to take for nonSPDXLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unclearLicense?: {
+                /**
+                 * @description The action to take for unclearLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mixedLicense?: {
+                /**
+                 * @description The action to take for mixedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              notice?: {
+                /**
+                 * @description The action to take for notice issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              modifiedLicense?: {
+                /**
+                 * @description The action to take for modifiedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              modifiedException?: {
+                /**
+                 * @description The action to take for modifiedException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseException?: {
+                /**
+                 * @description The action to take for licenseException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecatedException?: {
+                /**
+                 * @description The action to take for deprecatedException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              miscLicenseIssues?: {
+                /**
+                 * @description The action to take for miscLicenseIssues issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unidentifiedLicense?: {
+                /**
+                 * @description The action to take for unidentifiedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noLicenseFound?: {
+                /**
+                 * @description The action to take for noLicenseFound issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              explicitlyUnlicensedItem?: {
+                /**
+                 * @description The action to take for explicitlyUnlicensedItem issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              copyleftLicense?: {
+                /**
+                 * @description The action to take for copyleftLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonpermissiveLicense?: {
+                /**
+                 * @description The action to take for nonpermissiveLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              ambiguousClassifier?: {
+                /**
+                 * @description The action to take for ambiguousClassifier issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              invalidPackageJSON?: {
+                /**
+                 * @description The action to take for invalidPackageJSON issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              httpDependency?: {
+                /**
+                 * @description The action to take for httpDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gitDependency?: {
+                /**
+                 * @description The action to take for gitDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gitHubDependency?: {
+                /**
+                 * @description The action to take for gitHubDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              fileDependency?: {
+                /**
+                 * @description The action to take for fileDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noTests?: {
+                /**
+                 * @description The action to take for noTests issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noRepository?: {
+                /**
+                 * @description The action to take for noRepository issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badSemver?: {
+                /**
+                 * @description The action to take for badSemver issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badSemverDependency?: {
+                /**
+                 * @description The action to take for badSemverDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noV1?: {
+                /**
+                 * @description The action to take for noV1 issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noWebsite?: {
+                /**
+                 * @description The action to take for noWebsite issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noBugTracker?: {
+                /**
+                 * @description The action to take for noBugTracker issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noAuthorData?: {
+                /**
+                 * @description The action to take for noAuthorData issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              typeModuleCompatibility?: {
+                /**
+                 * @description The action to take for typeModuleCompatibility issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              floatingDependency?: {
+                /**
+                 * @description The action to take for floatingDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              manifestConfusion?: {
+                /**
+                 * @description The action to take for manifestConfusion issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              malware?: {
+                /**
+                 * @description The action to take for malware issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              telemetry?: {
+                /**
+                 * @description The action to take for telemetry issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              troll?: {
+                /**
+                 * @description The action to take for troll issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecated?: {
+                /**
+                 * @description The action to take for deprecated issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chronoAnomaly?: {
+                /**
+                 * @description The action to take for chronoAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              compromisedSSHKey?: {
+                /**
+                 * @description The action to take for compromisedSSHKey issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              semverAnomaly?: {
+                /**
+                 * @description The action to take for semverAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              newAuthor?: {
+                /**
+                 * @description The action to take for newAuthor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unstableOwnership?: {
+                /**
+                 * @description The action to take for unstableOwnership issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingAuthor?: {
+                /**
+                 * @description The action to take for missingAuthor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unmaintained?: {
+                /**
+                 * @description The action to take for unmaintained issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unpublished?: {
+                /**
+                 * @description The action to take for unpublished issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              majorRefactor?: {
+                /**
+                 * @description The action to take for majorRefactor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingTarball?: {
+                /**
+                 * @description The action to take for missingTarball issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              suspiciousStarActivity?: {
+                /**
+                 * @description The action to take for suspiciousStarActivity issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unpopularPackage?: {
+                /**
+                 * @description The action to take for unpopularPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              socketUpgradeAvailable?: {
+                /**
+                 * @description The action to take for socketUpgradeAvailable issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              longStrings?: {
+                /**
+                 * @description The action to take for longStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              highEntropyStrings?: {
+                /**
+                 * @description The action to take for highEntropyStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              urlStrings?: {
+                /**
+                 * @description The action to take for urlStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              usesEval?: {
+                /**
+                 * @description The action to take for usesEval issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              dynamicRequire?: {
+                /**
+                 * @description The action to take for dynamicRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              envVars?: {
+                /**
+                 * @description The action to take for envVars issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingDependency?: {
+                /**
+                 * @description The action to take for missingDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unusedDependency?: {
+                /**
+                 * @description The action to take for unusedDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              peerDependency?: {
+                /**
+                 * @description The action to take for peerDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              uncaughtOptionalDependency?: {
+                /**
+                 * @description The action to take for uncaughtOptionalDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unresolvedRequire?: {
+                /**
+                 * @description The action to take for unresolvedRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              extraneousDependency?: {
+                /**
+                 * @description The action to take for extraneousDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              obfuscatedRequire?: {
+                /**
+                 * @description The action to take for obfuscatedRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              obfuscatedFile?: {
+                /**
+                 * @description The action to take for obfuscatedFile issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              minifiedFile?: {
+                /**
+                 * @description The action to take for minifiedFile issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              installScripts?: {
+                /**
+                 * @description The action to take for installScripts issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              hasNativeCode?: {
+                /**
+                 * @description The action to take for hasNativeCode issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              binScriptConfusion?: {
+                /**
+                 * @description The action to take for binScriptConfusion issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shellScriptOverride?: {
+                /**
+                 * @description The action to take for shellScriptOverride issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              didYouMean?: {
+                /**
+                 * @description The action to take for didYouMean issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptDidYouMean?: {
+                /**
+                 * @description The action to take for gptDidYouMean issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              bidi?: {
+                /**
+                 * @description The action to take for bidi issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              zeroWidth?: {
+                /**
+                 * @description The action to take for zeroWidth issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badEncoding?: {
+                /**
+                 * @description The action to take for badEncoding issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              homoglyphs?: {
+                /**
+                 * @description The action to take for homoglyphs issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              invisibleChars?: {
+                /**
+                 * @description The action to take for invisibleChars issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              suspiciousString?: {
+                /**
+                 * @description The action to take for suspiciousString issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              potentialVulnerability?: {
+                /**
+                 * @description The action to take for potentialVulnerability issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+            };
+            /**
+             * @description The default security policy for the organization
+             * @default default
+             * @enum {string}
+             */
+            securityPolicyDefault?: "default" | "low" | "medium" | "high";
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Update Security Policy
+   * @description Update the security policy of an organization.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - security-policy:update
+   */
+  updateOrgSecurityPolicy: {
+    parameters: {
+      query?: {
+        /** @description Return only customized security policy rules in the response. */
+        custom_rules_only?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          /**
+           * @description The default security policy for the organization
+           * @enum {string}
+           */
+          policyDefault?: "default" | "low" | "medium" | "high";
+          policyRules?: {
+            gptSecurity?: {
+              /**
+               * @description The action to take for gptSecurity issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gptAnomaly?: {
+              /**
+               * @description The action to take for gptAnomaly issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gptMalware?: {
+              /**
+               * @description The action to take for gptMalware issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            filesystemAccess?: {
+              /**
+               * @description The action to take for filesystemAccess issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            networkAccess?: {
+              /**
+               * @description The action to take for networkAccess issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            shellAccess?: {
+              /**
+               * @description The action to take for shellAccess issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            debugAccess?: {
+              /**
+               * @description The action to take for debugAccess issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chromePermission?: {
+              /**
+               * @description The action to take for chromePermission issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chromeHostPermission?: {
+              /**
+               * @description The action to take for chromeHostPermission issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chromeWildcardHostPermission?: {
+              /**
+               * @description The action to take for chromeWildcardHostPermission issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chromeContentScript?: {
+              /**
+               * @description The action to take for chromeContentScript issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            criticalCVE?: {
+              /**
+               * @description The action to take for criticalCVE issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            cve?: {
+              /**
+               * @description The action to take for cve issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            mediumCVE?: {
+              /**
+               * @description The action to take for mediumCVE issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            mildCVE?: {
+              /**
+               * @description The action to take for mildCVE issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            emptyPackage?: {
+              /**
+               * @description The action to take for emptyPackage issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            trivialPackage?: {
+              /**
+               * @description The action to take for trivialPackage issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noREADME?: {
+              /**
+               * @description The action to take for noREADME issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            shrinkwrap?: {
+              /**
+               * @description The action to take for shrinkwrap issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            licenseSpdxDisj?: {
+              /**
+               * @description The action to take for licenseSpdxDisj issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unsafeCopyright?: {
+              /**
+               * @description The action to take for unsafeCopyright issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            licenseChange?: {
+              /**
+               * @description The action to take for licenseChange issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            nonOSILicense?: {
+              /**
+               * @description The action to take for nonOSILicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            deprecatedLicense?: {
+              /**
+               * @description The action to take for deprecatedLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            missingLicense?: {
+              /**
+               * @description The action to take for missingLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            nonSPDXLicense?: {
+              /**
+               * @description The action to take for nonSPDXLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unclearLicense?: {
+              /**
+               * @description The action to take for unclearLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            mixedLicense?: {
+              /**
+               * @description The action to take for mixedLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            notice?: {
+              /**
+               * @description The action to take for notice issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            modifiedLicense?: {
+              /**
+               * @description The action to take for modifiedLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            modifiedException?: {
+              /**
+               * @description The action to take for modifiedException issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            licenseException?: {
+              /**
+               * @description The action to take for licenseException issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            deprecatedException?: {
+              /**
+               * @description The action to take for deprecatedException issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            miscLicenseIssues?: {
+              /**
+               * @description The action to take for miscLicenseIssues issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unidentifiedLicense?: {
+              /**
+               * @description The action to take for unidentifiedLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noLicenseFound?: {
+              /**
+               * @description The action to take for noLicenseFound issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            explicitlyUnlicensedItem?: {
+              /**
+               * @description The action to take for explicitlyUnlicensedItem issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            copyleftLicense?: {
+              /**
+               * @description The action to take for copyleftLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            nonpermissiveLicense?: {
+              /**
+               * @description The action to take for nonpermissiveLicense issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            ambiguousClassifier?: {
+              /**
+               * @description The action to take for ambiguousClassifier issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            invalidPackageJSON?: {
+              /**
+               * @description The action to take for invalidPackageJSON issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            httpDependency?: {
+              /**
+               * @description The action to take for httpDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gitDependency?: {
+              /**
+               * @description The action to take for gitDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gitHubDependency?: {
+              /**
+               * @description The action to take for gitHubDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            fileDependency?: {
+              /**
+               * @description The action to take for fileDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noTests?: {
+              /**
+               * @description The action to take for noTests issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noRepository?: {
+              /**
+               * @description The action to take for noRepository issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            badSemver?: {
+              /**
+               * @description The action to take for badSemver issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            badSemverDependency?: {
+              /**
+               * @description The action to take for badSemverDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noV1?: {
+              /**
+               * @description The action to take for noV1 issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noWebsite?: {
+              /**
+               * @description The action to take for noWebsite issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noBugTracker?: {
+              /**
+               * @description The action to take for noBugTracker issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            noAuthorData?: {
+              /**
+               * @description The action to take for noAuthorData issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            typeModuleCompatibility?: {
+              /**
+               * @description The action to take for typeModuleCompatibility issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            floatingDependency?: {
+              /**
+               * @description The action to take for floatingDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            manifestConfusion?: {
+              /**
+               * @description The action to take for manifestConfusion issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            malware?: {
+              /**
+               * @description The action to take for malware issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            telemetry?: {
+              /**
+               * @description The action to take for telemetry issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            troll?: {
+              /**
+               * @description The action to take for troll issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            deprecated?: {
+              /**
+               * @description The action to take for deprecated issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            chronoAnomaly?: {
+              /**
+               * @description The action to take for chronoAnomaly issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            compromisedSSHKey?: {
+              /**
+               * @description The action to take for compromisedSSHKey issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            semverAnomaly?: {
+              /**
+               * @description The action to take for semverAnomaly issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            newAuthor?: {
+              /**
+               * @description The action to take for newAuthor issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unstableOwnership?: {
+              /**
+               * @description The action to take for unstableOwnership issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            missingAuthor?: {
+              /**
+               * @description The action to take for missingAuthor issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unmaintained?: {
+              /**
+               * @description The action to take for unmaintained issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unpublished?: {
+              /**
+               * @description The action to take for unpublished issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            majorRefactor?: {
+              /**
+               * @description The action to take for majorRefactor issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            missingTarball?: {
+              /**
+               * @description The action to take for missingTarball issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            suspiciousStarActivity?: {
+              /**
+               * @description The action to take for suspiciousStarActivity issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unpopularPackage?: {
+              /**
+               * @description The action to take for unpopularPackage issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            socketUpgradeAvailable?: {
+              /**
+               * @description The action to take for socketUpgradeAvailable issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            longStrings?: {
+              /**
+               * @description The action to take for longStrings issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            highEntropyStrings?: {
+              /**
+               * @description The action to take for highEntropyStrings issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            urlStrings?: {
+              /**
+               * @description The action to take for urlStrings issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            usesEval?: {
+              /**
+               * @description The action to take for usesEval issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            dynamicRequire?: {
+              /**
+               * @description The action to take for dynamicRequire issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            envVars?: {
+              /**
+               * @description The action to take for envVars issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            missingDependency?: {
+              /**
+               * @description The action to take for missingDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unusedDependency?: {
+              /**
+               * @description The action to take for unusedDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            peerDependency?: {
+              /**
+               * @description The action to take for peerDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            uncaughtOptionalDependency?: {
+              /**
+               * @description The action to take for uncaughtOptionalDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            unresolvedRequire?: {
+              /**
+               * @description The action to take for unresolvedRequire issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            extraneousDependency?: {
+              /**
+               * @description The action to take for extraneousDependency issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            obfuscatedRequire?: {
+              /**
+               * @description The action to take for obfuscatedRequire issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            obfuscatedFile?: {
+              /**
+               * @description The action to take for obfuscatedFile issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            minifiedFile?: {
+              /**
+               * @description The action to take for minifiedFile issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            installScripts?: {
+              /**
+               * @description The action to take for installScripts issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            hasNativeCode?: {
+              /**
+               * @description The action to take for hasNativeCode issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            binScriptConfusion?: {
+              /**
+               * @description The action to take for binScriptConfusion issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            shellScriptOverride?: {
+              /**
+               * @description The action to take for shellScriptOverride issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            didYouMean?: {
+              /**
+               * @description The action to take for didYouMean issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            gptDidYouMean?: {
+              /**
+               * @description The action to take for gptDidYouMean issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            bidi?: {
+              /**
+               * @description The action to take for bidi issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            zeroWidth?: {
+              /**
+               * @description The action to take for zeroWidth issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            badEncoding?: {
+              /**
+               * @description The action to take for badEncoding issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            homoglyphs?: {
+              /**
+               * @description The action to take for homoglyphs issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            invisibleChars?: {
+              /**
+               * @description The action to take for invisibleChars issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            suspiciousString?: {
+              /**
+               * @description The action to take for suspiciousString issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+            potentialVulnerability?: {
+              /**
+               * @description The action to take for potentialVulnerability issues.
+               * @enum {string}
+               */
+              action: "defer" | "error" | "warn" | "monitor" | "ignore";
+            };
+          };
+          /**
+           * @description Reset the policy rules to the default. When set to true, do not include any policyRules updates.
+           * @default false
+           */
+          resetPolicyRules?: boolean;
+        };
+      };
+    };
+    responses: {
+      /** @description Updated repository details */
+      200: {
+        content: {
+          "application/json": {
+            securityPolicyRules?: {
+              gptSecurity?: {
+                /**
+                 * @description The action to take for gptSecurity issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptAnomaly?: {
+                /**
+                 * @description The action to take for gptAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptMalware?: {
+                /**
+                 * @description The action to take for gptMalware issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              filesystemAccess?: {
+                /**
+                 * @description The action to take for filesystemAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              networkAccess?: {
+                /**
+                 * @description The action to take for networkAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shellAccess?: {
+                /**
+                 * @description The action to take for shellAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              debugAccess?: {
+                /**
+                 * @description The action to take for debugAccess issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromePermission?: {
+                /**
+                 * @description The action to take for chromePermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeHostPermission?: {
+                /**
+                 * @description The action to take for chromeHostPermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeWildcardHostPermission?: {
+                /**
+                 * @description The action to take for chromeWildcardHostPermission issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chromeContentScript?: {
+                /**
+                 * @description The action to take for chromeContentScript issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              criticalCVE?: {
+                /**
+                 * @description The action to take for criticalCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              cve?: {
+                /**
+                 * @description The action to take for cve issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mediumCVE?: {
+                /**
+                 * @description The action to take for mediumCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mildCVE?: {
+                /**
+                 * @description The action to take for mildCVE issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              emptyPackage?: {
+                /**
+                 * @description The action to take for emptyPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              trivialPackage?: {
+                /**
+                 * @description The action to take for trivialPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noREADME?: {
+                /**
+                 * @description The action to take for noREADME issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shrinkwrap?: {
+                /**
+                 * @description The action to take for shrinkwrap issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseSpdxDisj?: {
+                /**
+                 * @description The action to take for licenseSpdxDisj issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unsafeCopyright?: {
+                /**
+                 * @description The action to take for unsafeCopyright issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseChange?: {
+                /**
+                 * @description The action to take for licenseChange issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonOSILicense?: {
+                /**
+                 * @description The action to take for nonOSILicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecatedLicense?: {
+                /**
+                 * @description The action to take for deprecatedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingLicense?: {
+                /**
+                 * @description The action to take for missingLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonSPDXLicense?: {
+                /**
+                 * @description The action to take for nonSPDXLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unclearLicense?: {
+                /**
+                 * @description The action to take for unclearLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              mixedLicense?: {
+                /**
+                 * @description The action to take for mixedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              notice?: {
+                /**
+                 * @description The action to take for notice issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              modifiedLicense?: {
+                /**
+                 * @description The action to take for modifiedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              modifiedException?: {
+                /**
+                 * @description The action to take for modifiedException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              licenseException?: {
+                /**
+                 * @description The action to take for licenseException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecatedException?: {
+                /**
+                 * @description The action to take for deprecatedException issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              miscLicenseIssues?: {
+                /**
+                 * @description The action to take for miscLicenseIssues issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unidentifiedLicense?: {
+                /**
+                 * @description The action to take for unidentifiedLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noLicenseFound?: {
+                /**
+                 * @description The action to take for noLicenseFound issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              explicitlyUnlicensedItem?: {
+                /**
+                 * @description The action to take for explicitlyUnlicensedItem issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              copyleftLicense?: {
+                /**
+                 * @description The action to take for copyleftLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              nonpermissiveLicense?: {
+                /**
+                 * @description The action to take for nonpermissiveLicense issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              ambiguousClassifier?: {
+                /**
+                 * @description The action to take for ambiguousClassifier issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              invalidPackageJSON?: {
+                /**
+                 * @description The action to take for invalidPackageJSON issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              httpDependency?: {
+                /**
+                 * @description The action to take for httpDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gitDependency?: {
+                /**
+                 * @description The action to take for gitDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gitHubDependency?: {
+                /**
+                 * @description The action to take for gitHubDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              fileDependency?: {
+                /**
+                 * @description The action to take for fileDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noTests?: {
+                /**
+                 * @description The action to take for noTests issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noRepository?: {
+                /**
+                 * @description The action to take for noRepository issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badSemver?: {
+                /**
+                 * @description The action to take for badSemver issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badSemverDependency?: {
+                /**
+                 * @description The action to take for badSemverDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noV1?: {
+                /**
+                 * @description The action to take for noV1 issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noWebsite?: {
+                /**
+                 * @description The action to take for noWebsite issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noBugTracker?: {
+                /**
+                 * @description The action to take for noBugTracker issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              noAuthorData?: {
+                /**
+                 * @description The action to take for noAuthorData issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              typeModuleCompatibility?: {
+                /**
+                 * @description The action to take for typeModuleCompatibility issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              floatingDependency?: {
+                /**
+                 * @description The action to take for floatingDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              manifestConfusion?: {
+                /**
+                 * @description The action to take for manifestConfusion issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              malware?: {
+                /**
+                 * @description The action to take for malware issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              telemetry?: {
+                /**
+                 * @description The action to take for telemetry issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              troll?: {
+                /**
+                 * @description The action to take for troll issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              deprecated?: {
+                /**
+                 * @description The action to take for deprecated issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              chronoAnomaly?: {
+                /**
+                 * @description The action to take for chronoAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              compromisedSSHKey?: {
+                /**
+                 * @description The action to take for compromisedSSHKey issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              semverAnomaly?: {
+                /**
+                 * @description The action to take for semverAnomaly issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              newAuthor?: {
+                /**
+                 * @description The action to take for newAuthor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unstableOwnership?: {
+                /**
+                 * @description The action to take for unstableOwnership issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingAuthor?: {
+                /**
+                 * @description The action to take for missingAuthor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unmaintained?: {
+                /**
+                 * @description The action to take for unmaintained issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unpublished?: {
+                /**
+                 * @description The action to take for unpublished issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              majorRefactor?: {
+                /**
+                 * @description The action to take for majorRefactor issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingTarball?: {
+                /**
+                 * @description The action to take for missingTarball issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              suspiciousStarActivity?: {
+                /**
+                 * @description The action to take for suspiciousStarActivity issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unpopularPackage?: {
+                /**
+                 * @description The action to take for unpopularPackage issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              socketUpgradeAvailable?: {
+                /**
+                 * @description The action to take for socketUpgradeAvailable issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              longStrings?: {
+                /**
+                 * @description The action to take for longStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              highEntropyStrings?: {
+                /**
+                 * @description The action to take for highEntropyStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              urlStrings?: {
+                /**
+                 * @description The action to take for urlStrings issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              usesEval?: {
+                /**
+                 * @description The action to take for usesEval issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              dynamicRequire?: {
+                /**
+                 * @description The action to take for dynamicRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              envVars?: {
+                /**
+                 * @description The action to take for envVars issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              missingDependency?: {
+                /**
+                 * @description The action to take for missingDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unusedDependency?: {
+                /**
+                 * @description The action to take for unusedDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              peerDependency?: {
+                /**
+                 * @description The action to take for peerDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              uncaughtOptionalDependency?: {
+                /**
+                 * @description The action to take for uncaughtOptionalDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              unresolvedRequire?: {
+                /**
+                 * @description The action to take for unresolvedRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              extraneousDependency?: {
+                /**
+                 * @description The action to take for extraneousDependency issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              obfuscatedRequire?: {
+                /**
+                 * @description The action to take for obfuscatedRequire issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              obfuscatedFile?: {
+                /**
+                 * @description The action to take for obfuscatedFile issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              minifiedFile?: {
+                /**
+                 * @description The action to take for minifiedFile issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              installScripts?: {
+                /**
+                 * @description The action to take for installScripts issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              hasNativeCode?: {
+                /**
+                 * @description The action to take for hasNativeCode issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              binScriptConfusion?: {
+                /**
+                 * @description The action to take for binScriptConfusion issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              shellScriptOverride?: {
+                /**
+                 * @description The action to take for shellScriptOverride issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              didYouMean?: {
+                /**
+                 * @description The action to take for didYouMean issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              gptDidYouMean?: {
+                /**
+                 * @description The action to take for gptDidYouMean issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              bidi?: {
+                /**
+                 * @description The action to take for bidi issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              zeroWidth?: {
+                /**
+                 * @description The action to take for zeroWidth issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              badEncoding?: {
+                /**
+                 * @description The action to take for badEncoding issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              homoglyphs?: {
+                /**
+                 * @description The action to take for homoglyphs issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              invisibleChars?: {
+                /**
+                 * @description The action to take for invisibleChars issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              suspiciousString?: {
+                /**
+                 * @description The action to take for suspiciousString issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+              potentialVulnerability?: {
+                /**
+                 * @description The action to take for potentialVulnerability issues.
+                 * @enum {string}
+                 */
+                action: "defer" | "error" | "warn" | "monitor" | "ignore";
+              };
+            };
+            /**
+             * @description The default security policy for the organization
+             * @default default
+             * @enum {string}
+             */
+            securityPolicyDefault?: "default" | "low" | "medium" | "high";
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get Organization License Policy
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/viewlicensepolicy) for more information. Use the [successor version](/v0/orgs/{org_slug}/settings/license-policy/view) instead.
+   *
+   * Retrieve the license policy of an organization.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - license-policy:read
+   */
+  getOrgLicensePolicy: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description Retrieved license policy details */
+      200: {
+        content: {
+          "application/json": Record<string, never>;
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Update License Policy
+   * @description Set the organization's license policy
+   *
+   *
+   * ## License policy schema
+   *
+   * ```json
+   * {
+   *   allow?: Array<string>
+   *   warn?: Array<string>
+   *   options?: Array<string>
+   * }
+   * ```
+   *
+   * Elements of the `allow` and `warn` arrays strings representing items which should be allowed, or which should trigger a warning; license data found in pacakge which not present in either array will produce a license violation (effectively a "hard" error). For example, to allow Apache-2.0 and MIT to the allow list, simply add the strings "Apache-2.0" and "MIT" to the `allow` array. Strings appearing in these arrays are generally "what you see is what you get", with two important exceptions: strings which are recognized as license classes and strings which are recognized as PURLs are handled differently to allow for more flexible license policy creation.
+   *
+   * ## License Classes
+   *
+   * Strings which are license classes will expand to a list of licenses known to be in that particular license class. Recognized license classes are:
+   *   'permissive',
+   *   'permissive (model)',
+   *   'permissive (gold)',
+   *   'permissive (silver)',
+   *   'permissive (bronze)',
+   *   'permissive (lead)',
+   *   'copyleft',
+   *   'maximal copyleft',
+   *   'network copyleft',
+   *   'strong copyleft',
+   *   'weak copyleft',
+   *   'contributor license agreement',
+   *   'public domain',
+   *   'proprietary free',
+   *   'source available',
+   *   'proprietary',
+   *   'commercial',
+   *   'patent'
+   *
+   * Users can learn more about [copyleft tiers](https://blueoakcouncil.org/copyleft) and [permissive tiers](https://blueoakcouncil.org/list) by reading the linked resources.
+   *
+   *
+   * ## PURLs
+   *
+   * Users may also modify their license policy's allow and warn lists by using [package URLs](https://github.com/package-url/purl-spec) (aka PURLs), which support glob patterns to allow a range of versions, files and directories, etc.
+   *
+   * purl qualifiers which support globs are `filename`, `version_glob`, `artifact_id` and `license_provenance` (primarily used for allowing data from registry metadata).
+   *
+   * ### Examples:
+   * Allow all license data found in a specific version of a package 4.14.1: `pkg:npm/lodash@4.14.1`
+   * Allow all license data found in a version range of a package: `pkg:npm/lodash?version_glob=15.*`
+   * Allow all license data in the test directory of a given package for certain version ranges: `pkg:npm/lodash@15.*.*?file_name=lodash/test/*`
+   * Allow all license data taken from the package registry for a package and version range: `pkg:npm/lodash?version_glob=*&license_provenance=registry_metadata`
+   *
+   * ## Available options
+   *
+   * `toplevelOnly`: only apply the license policy to "top level" license data in a package, which includes registry metadata, LICENSE files, and manifest files which are closest to the root of the package.
+   *
+   * `applyToUnidentified`: Apply license policy to found but unidentified license data. If enabled, the license policy will be applied to license data which could not be affirmatively identified as a known license (this will effectively merge the license policy violation and unidentified license alerts). If disabled, license policy alerts will only be shown for license data which is positively identified as something not allowed or set to warn by the license policy.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - license-policy:update
+   */
+  updateOrgLicensePolicy: {
+    parameters: {
+      query: {
+        /** @description Merge the policy update with the existing policy. Default is true. If false, the existing policy will be replaced with the new policy. */
+        merge_update: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    requestBody?: {
+      content: {
+        "application/json": Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Updated repository details */
+      200: {
+        content: {
+          "application/json": Record<string, never>;
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get License Policy (Beta)
+   * @description Returns an organization's license policy
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - license-policy:read
+   */
+  viewLicensePolicy: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description Saturated License Allow List */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SStoredLicensePolicy"];
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+      500: components["responses"]["SocketInternalServerError"];
+    };
+  };
+  /**
+   * List historical alerts (Beta)
+   * @description List historical alerts.
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - historical:alerts-list
+   */
+  historicalAlertsList: {
+    parameters: {
+      query?: {
+        /** @description The UTC date in YYYY-MM-DD format for which to fetch alerts */
+        date?: string;
+        /** @description The number of days of data to fetch as an offset from input date (e.g. "-7d" or "7d") or use "latest" to query for latest alerts for each repo */
+        range?: string;
+        /** @description Specify the maximum number of results to return per page (intermediate pages may have fewer than this limit and callers should always check "endCursor" in response body to know if there are more pages) */
+        per_page?: number;
+        /** @description The pagination cursor that was returned as the "endCursor" property in previous request */
+        startAfterCursor?: string;
+        /** @description Comma-separated list of alert severities ("low", "medium", "high", or "critical") that should be included */
+        "filters.alertSeverity"?: string;
+        /** @description Comma-separated list of alert severities ("low", "medium", "high", or "critical") that should be excluded */
+        "filters.alertSeverity.notIn"?: string;
+        /** @description Comma-separated list of repo slugs that should be included */
+        "filters.repoSlug"?: string;
+        /** @description Comma-separated list of repo slugs that should be excluded */
+        "filters.repoSlug.notIn"?: string;
+        /** @description Comma-separated list of repo labels that should be included */
+        "filters.repoLabels"?: string;
+        /** @description Comma-separated list of repo labels that should be excluded */
+        "filters.repoLabels.notIn"?: string;
+        /** @description Comma-separated list of alert types (e.g. "usesEval", "unmaintained", etc.) that should be included */
+        "filters.alertType"?: string;
+        /** @description Comma-separated list of alert types (e.g. "usesEval", "unmaintained", etc.) that should be excluded */
+        "filters.alertType.notIn"?: string;
+        /** @description Name of artifact */
+        "filters.artifactName"?: string;
+        /** @description Name of artifact */
+        "filters.artifactName.notIn"?: string;
+        /** @description Comma-separated list of artifact types (e.g. "npm", "pypi", "gem", "maven", "golang", etc.) that should be included */
+        "filters.artifactType"?: string;
+        /** @description Comma-separated list of artifact types (e.g. "npm", "pypi", "gem", "maven", "golang", etc.) that should be excluded */
+        "filters.artifactType.notIn"?: string;
+        /** @description Comma-separated list of alert actions ("error", "warn", "monitor", or "ignore) that should be included */
+        "filters.alertAction"?: string;
+        /** @description Comma-separated list of alert actions ("error", "warn", "monitor", or "ignore) that should be excluded */
+        "filters.alertAction.notIn"?: string;
+        /** @description Comma-separated list of alert action source types ("fallback", "org-policy", "reachability", "repo-label-policy", "socket-yml", or "triage") that should be included */
+        "filters.alertActionSourceType"?: string;
+        /** @description Comma-separated list of alert action source types ("fallback", "org-policy", "reachability", "repo-label-policy", "socket-yml", or "triage") that should be excluded */
+        "filters.alertActionSourceType.notIn"?: string;
+        /** @description Comma-separated list of alert fix types ("upgrade", "cve", or "remove") that should be included */
+        "filters.alertFixType"?: string;
+        /** @description Comma-separated list of alert fix types ("upgrade", "cve", or "remove") that should be excluded */
+        "filters.alertFixType.notIn"?: string;
+        /** @description Comma-separated list of alert categories ("supplyChainRisk", "maintenance", "quality", "license", or "vulnerability") that should be included */
+        "filters.alertCategory"?: string;
+        /** @description Comma-separated list of alert categories ("supplyChainRisk", "maintenance", "quality", "license", or "vulnerability") that should be excluded */
+        "filters.alertCategory.notIn"?: string;
+        /** @description CVE ID */
+        "filters.alertCveId"?: string;
+        /** @description CVE ID */
+        "filters.alertCveId.notIn"?: string;
+        /** @description CVE title */
+        "filters.alertCveTitle"?: string;
+        /** @description CVE title */
+        "filters.alertCveTitle.notIn"?: string;
+        /** @description CWE ID */
+        "filters.alertCweId"?: string;
+        /** @description CWE ID */
+        "filters.alertCweId.notIn"?: string;
+        /** @description CWE name */
+        "filters.alertCweName"?: string;
+        /** @description CWE name */
+        "filters.alertCweName.notIn"?: string;
+        /** @description Comma-separated list of alert CVE reachability types ("direct_dependency", "error", "maybe_reachable", "missing_support", "pending", "reachable", "undeterminable_reachability", "unknown", or "unreachable") that should be included */
+        "filters.alertReachabilityType"?: string;
+        /** @description Comma-separated list of alert CVE reachability types ("direct_dependency", "error", "maybe_reachable", "missing_support", "pending", "reachable", "undeterminable_reachability", "unknown", or "unreachable") that should be excluded */
+        "filters.alertReachabilityType.notIn"?: string;
+        /** @description Alert priority ("low", "medium", or "high") */
+        "filters.alertPriority"?: string;
+        /** @description Alert priority ("low", "medium", or "high") */
+        "filters.alertPriority.notIn"?: string;
+        /** @description Direct/transitive dependency filter flag */
+        "filters.dependencyDirect"?: boolean;
+        /** @description Direct/transitive dependency filter flag */
+        "filters.dependencyDirect.notIn"?: boolean;
+        /** @description Development/production dependency filter flag */
+        "filters.dependencyDev"?: boolean;
+        /** @description Development/production dependency filter flag */
+        "filters.dependencyDev.notIn"?: boolean;
+        /** @description Dead/reachable dependency filter flag */
+        "filters.dependencyDead"?: boolean;
+        /** @description Dead/reachable dependency filter flag */
+        "filters.dependencyDead.notIn"?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The paginated array of API tokens for the organization, and related metadata. */
+      200: {
+        content: {
+          "application/json": {
+            /** @default */
+            endCursor: string | null;
+            items: ({
+                /** @default */
+                repoId: string | null;
+                /** @default */
+                repoSlug: string;
+                repoLabels: string[];
+                repoLabelIds: string[];
+                /** @default */
+                branch: string;
+                /** @default false */
+                defaultBranch: boolean;
+                /** @default */
+                fullScanId: string;
+                /** @default */
+                scannedAt: string;
+                artifact: {
+                  /** @default */
+                  id: string | null;
+                  /** @default */
+                  license: string | null;
+                  /** @default */
+                  name: string;
+                  /** @default */
+                  namespace: string | null;
+                  /** @default */
+                  type: string;
+                  /** @default */
+                  version: string;
+                  /** @default */
+                  artifact_id?: string;
+                  /** @default */
+                  artifactId?: string;
+                  /** @default */
+                  author?: string;
+                  capabilities?: components["schemas"]["Capabilities"];
+                  qualifiers?: components["schemas"]["Qualifiers"];
+                  scores?: components["schemas"]["SocketScore"];
+                  /** @default 0 */
+                  size?: number;
+                  /** @default */
+                  subpath?: string;
+                };
+                alert: {
+                  /** @default */
+                  key: string;
+                  /** @default */
+                  type: string;
+                  /** @default 0 */
+                  severity: number;
+                  /** @default */
+                  severityName: string;
+                  /** @default */
+                  action: string;
+                  /** @default */
+                  category: string;
+                  /** @default */
+                  file?: string | null;
+                  /** @default null */
+                  props?: Record<string, unknown> | null;
+                  /** @default 0 */
+                  start?: number | null;
+                  /** @default 0 */
+                  end?: number | null;
+                  fix?: {
+                    /** @default */
+                    type: string;
+                    /** @default */
+                    description: string;
+                  } | null;
+                };
+                dependency: {
+                  /** @default false */
+                  direct: boolean;
+                  /** @default false */
+                  dev: boolean;
+                  /** @default false */
+                  dead: boolean;
+                  manifestFiles?: components["schemas"]["SocketManifestReference"][];
+                  topLevelAncestors?: components["schemas"]["SocketId"][];
+                  dependencies?: components["schemas"]["SocketId"][];
+                };
+              })[];
+            meta: {
+              /** @default */
+              organizationId: string;
+              /** @default 0 */
+              queryStartTimestamp: number;
+              /** @default */
+              startDateInclusive: string;
+              /** @default */
+              endDateInclusive: string;
+              /** @default false */
+              includeLatestAlertsOnly: boolean;
+              filters: {
+                /** @description Comma-separated list of alert severities ("low", "medium", "high", or "critical") that should be excluded */
+                alertSeverity?: string[];
+                /** @description Comma-separated list of repo slugs that should be excluded */
+                repoSlug?: string[];
+                /** @description Comma-separated list of repo labels that should be excluded */
+                repoLabels?: string[];
+                /** @description Comma-separated list of alert types (e.g. "usesEval", "unmaintained", etc.) that should be excluded */
+                alertType?: string[];
+                /** @description Name of artifact */
+                artifactName?: string[];
+                /** @description Comma-separated list of artifact types (e.g. "npm", "pypi", "gem", "maven", "golang", etc.) that should be excluded */
+                artifactType?: string[];
+                /** @description Comma-separated list of alert actions ("error", "warn", "monitor", or "ignore) that should be excluded */
+                alertAction?: string[];
+                /** @description Comma-separated list of alert action source types ("fallback", "org-policy", "reachability", "repo-label-policy", "socket-yml", or "triage") that should be excluded */
+                alertActionSourceType?: string[];
+                /** @description Comma-separated list of alert fix types ("upgrade", "cve", or "remove") that should be excluded */
+                alertFixType?: string[];
+                /** @description Comma-separated list of alert categories ("supplyChainRisk", "maintenance", "quality", "license", or "vulnerability") that should be excluded */
+                alertCategory?: string[];
+                /** @description CVE ID */
+                alertCveId?: string[];
+                /** @description CVE title */
+                alertCveTitle?: string[];
+                /** @description CWE ID */
+                alertCweId?: string[];
+                /** @description CWE name */
+                alertCweName?: string[];
+                /** @description Comma-separated list of alert CVE reachability types ("direct_dependency", "error", "maybe_reachable", "missing_support", "pending", "reachable", "undeterminable_reachability", "unknown", or "unreachable") that should be excluded */
+                alertReachabilityType?: string[];
+                /** @description Alert priority ("low", "medium", or "high") */
+                alertPriority?: string[];
+                /** @description Direct/transitive dependency filter flag */
+                dependencyDirect?: boolean[];
+                /** @description Development/production dependency filter flag */
+                dependencyDev?: boolean[];
+                /** @description Dead/reachable dependency filter flag */
+                dependencyDead?: boolean[];
+              };
+            };
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Trend of historical alerts (Beta)
+   * @description Trend analytics of historical alerts.
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - historical:alerts-trend
+   */
+  historicalAlertsTrend: {
+    parameters: {
+      query?: {
+        /** @description The UTC date in YYYY-MM-DD format for which to fetch alerts */
+        date?: string;
+        /** @description The number of days of data to fetch as an offset from input date */
+        range?: string;
+        /** @description Comma-separated list of fields that should be used for count aggregation (allowed: alertSeverity,repoSlug,repoLabels,alertType,artifactType,alertAction,alertActionSourceType,alertFixType,alertCategory,alertCveId,alertCveTitle,alertCweId,alertCweName,alertReachabilityType,alertPriority,dependencyDirect,dependencyDev,dependencyDead) */
+        "aggregation.fields"?: string;
+        /** @description Comma-separated list of alert severities ("low", "medium", "high", or "critical") that should be included */
+        "filters.alertSeverity"?: string;
+        /** @description Comma-separated list of alert severities ("low", "medium", "high", or "critical") that should be excluded */
+        "filters.alertSeverity.notIn"?: string;
+        /** @description Comma-separated list of repo slugs that should be included */
+        "filters.repoSlug"?: string;
+        /** @description Comma-separated list of repo slugs that should be excluded */
+        "filters.repoSlug.notIn"?: string;
+        /** @description Comma-separated list of repo labels that should be included */
+        "filters.repoLabels"?: string;
+        /** @description Comma-separated list of repo labels that should be excluded */
+        "filters.repoLabels.notIn"?: string;
+        /** @description Comma-separated list of alert types (e.g. "usesEval", "unmaintained", etc.) that should be included */
+        "filters.alertType"?: string;
+        /** @description Comma-separated list of alert types (e.g. "usesEval", "unmaintained", etc.) that should be excluded */
+        "filters.alertType.notIn"?: string;
+        /** @description Name of artifact */
+        "filters.artifactName"?: string;
+        /** @description Name of artifact */
+        "filters.artifactName.notIn"?: string;
+        /** @description Comma-separated list of artifact types (e.g. "npm", "pypi", "gem", "maven", "golang", etc.) that should be included */
+        "filters.artifactType"?: string;
+        /** @description Comma-separated list of artifact types (e.g. "npm", "pypi", "gem", "maven", "golang", etc.) that should be excluded */
+        "filters.artifactType.notIn"?: string;
+        /** @description Comma-separated list of alert actions ("error", "warn", "monitor", or "ignore) that should be included */
+        "filters.alertAction"?: string;
+        /** @description Comma-separated list of alert actions ("error", "warn", "monitor", or "ignore) that should be excluded */
+        "filters.alertAction.notIn"?: string;
+        /** @description Comma-separated list of alert action source types ("fallback", "org-policy", "reachability", "repo-label-policy", "socket-yml", or "triage") that should be included */
+        "filters.alertActionSourceType"?: string;
+        /** @description Comma-separated list of alert action source types ("fallback", "org-policy", "reachability", "repo-label-policy", "socket-yml", or "triage") that should be excluded */
+        "filters.alertActionSourceType.notIn"?: string;
+        /** @description Comma-separated list of alert fix types ("upgrade", "cve", or "remove") that should be included */
+        "filters.alertFixType"?: string;
+        /** @description Comma-separated list of alert fix types ("upgrade", "cve", or "remove") that should be excluded */
+        "filters.alertFixType.notIn"?: string;
+        /** @description Comma-separated list of alert categories ("supplyChainRisk", "maintenance", "quality", "license", or "vulnerability") that should be included */
+        "filters.alertCategory"?: string;
+        /** @description Comma-separated list of alert categories ("supplyChainRisk", "maintenance", "quality", "license", or "vulnerability") that should be excluded */
+        "filters.alertCategory.notIn"?: string;
+        /** @description CVE ID */
+        "filters.alertCveId"?: string;
+        /** @description CVE ID */
+        "filters.alertCveId.notIn"?: string;
+        /** @description CVE title */
+        "filters.alertCveTitle"?: string;
+        /** @description CVE title */
+        "filters.alertCveTitle.notIn"?: string;
+        /** @description CWE ID */
+        "filters.alertCweId"?: string;
+        /** @description CWE ID */
+        "filters.alertCweId.notIn"?: string;
+        /** @description CWE name */
+        "filters.alertCweName"?: string;
+        /** @description CWE name */
+        "filters.alertCweName.notIn"?: string;
+        /** @description Comma-separated list of alert CVE reachability types ("direct_dependency", "error", "maybe_reachable", "missing_support", "pending", "reachable", "undeterminable_reachability", "unknown", or "unreachable") that should be included */
+        "filters.alertReachabilityType"?: string;
+        /** @description Comma-separated list of alert CVE reachability types ("direct_dependency", "error", "maybe_reachable", "missing_support", "pending", "reachable", "undeterminable_reachability", "unknown", or "unreachable") that should be excluded */
+        "filters.alertReachabilityType.notIn"?: string;
+        /** @description Alert priority ("low", "medium", or "high") */
+        "filters.alertPriority"?: string;
+        /** @description Alert priority ("low", "medium", or "high") */
+        "filters.alertPriority.notIn"?: string;
+        /** @description Direct/transitive dependency filter flag */
+        "filters.dependencyDirect"?: boolean;
+        /** @description Direct/transitive dependency filter flag */
+        "filters.dependencyDirect.notIn"?: boolean;
+        /** @description Development/production dependency filter flag */
+        "filters.dependencyDev"?: boolean;
+        /** @description Development/production dependency filter flag */
+        "filters.dependencyDev.notIn"?: boolean;
+        /** @description Dead/reachable dependency filter flag */
+        "filters.dependencyDead"?: boolean;
+        /** @description Dead/reachable dependency filter flag */
+        "filters.dependencyDead.notIn"?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The trend data */
+      200: {
+        content: {
+          "application/json": {
+            meta: {
+              /** @default */
+              organizationId: string;
+              /** @default */
+              startDateInclusive: string;
+              /** @default */
+              endDateInclusive: string;
+              /** @default */
+              interval: string;
+              aggregation: {
+                fields: string[];
+                groups: string[][];
+              };
+              filters: {
+                /** @description Comma-separated list of alert severities ("low", "medium", "high", or "critical") that should be excluded */
+                alertSeverity?: string[];
+                /** @description Comma-separated list of repo slugs that should be excluded */
+                repoSlug?: string[];
+                /** @description Comma-separated list of repo labels that should be excluded */
+                repoLabels?: string[];
+                /** @description Comma-separated list of alert types (e.g. "usesEval", "unmaintained", etc.) that should be excluded */
+                alertType?: string[];
+                /** @description Name of artifact */
+                artifactName?: string[];
+                /** @description Comma-separated list of artifact types (e.g. "npm", "pypi", "gem", "maven", "golang", etc.) that should be excluded */
+                artifactType?: string[];
+                /** @description Comma-separated list of alert actions ("error", "warn", "monitor", or "ignore) that should be excluded */
+                alertAction?: string[];
+                /** @description Comma-separated list of alert action source types ("fallback", "org-policy", "reachability", "repo-label-policy", "socket-yml", or "triage") that should be excluded */
+                alertActionSourceType?: string[];
+                /** @description Comma-separated list of alert fix types ("upgrade", "cve", or "remove") that should be excluded */
+                alertFixType?: string[];
+                /** @description Comma-separated list of alert categories ("supplyChainRisk", "maintenance", "quality", "license", or "vulnerability") that should be excluded */
+                alertCategory?: string[];
+                /** @description CVE ID */
+                alertCveId?: string[];
+                /** @description CVE title */
+                alertCveTitle?: string[];
+                /** @description CWE ID */
+                alertCweId?: string[];
+                /** @description CWE name */
+                alertCweName?: string[];
+                /** @description Comma-separated list of alert CVE reachability types ("direct_dependency", "error", "maybe_reachable", "missing_support", "pending", "reachable", "undeterminable_reachability", "unknown", or "unreachable") that should be excluded */
+                alertReachabilityType?: string[];
+                /** @description Alert priority ("low", "medium", or "high") */
+                alertPriority?: string[];
+                /** @description Direct/transitive dependency filter flag */
+                dependencyDirect?: boolean[];
+                /** @description Development/production dependency filter flag */
+                dependencyDev?: boolean[];
+                /** @description Dead/reachable dependency filter flag */
+                dependencyDead?: boolean[];
+              };
+            };
+            items: {
+                /** @default */
+                date: string;
+                /** @default 0 */
+                startOfDayTimestamp: number;
+                dataPoints: {
+                    aggregationGroup: string[];
+                    /** @default 0 */
+                    count: number;
+                    /** @default 0 */
+                    countDelta: number;
+                  }[];
+              }[];
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Trend of historical dependencies (Beta)
+   * @description Trend analytics of historical dependencies.
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - historical:dependencies-trend
+   */
+  historicalDependenciesTrend: {
+    parameters: {
+      query?: {
+        /** @description The UTC date in YYYY-MM-DD format for which to fetch dependencies */
+        date?: string;
+        /** @description The number of days of data to fetch as an offset from input date */
+        range?: string;
+        /** @description Comma-separated list of repo slugs that should be included */
+        repoSlug?: string;
+        /** @description Comma-separated list of repo labels that should be included */
+        repoLabels?: string;
+        /** @description Comma-separated list of artifact types (e.g. "npm", "pypi", "gem", "maven", "golang", etc.) that should be included */
+        artifactType?: string;
+        /** @description Direct/transitive dependency filter flag */
+        dependencyDirect?: boolean;
+        /** @description Development/production dependency filter flag */
+        dependencyDev?: boolean;
+        /** @description Dead/reachable dependency filter flag */
+        dependencyDead?: boolean;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The trend data */
+      200: {
+        content: {
+          "application/json": {
+            meta: {
+              /** @default */
+              organizationId: string;
+              /** @default */
+              startDateInclusive: string;
+              /** @default */
+              endDateInclusive: string;
+              /** @default */
+              interval: string;
+              aggregation: {
+                fields: string[];
+                groups: string[][];
+              };
+              filters: {
+                /** @description Comma-separated list of repo slugs that should be included */
+                repoSlug?: string[];
+                /** @description Comma-separated list of repo labels that should be included */
+                repoLabels?: string[];
+                /** @description Comma-separated list of artifact types (e.g. "npm", "pypi", "gem", "maven", "golang", etc.) that should be included */
+                artifactType?: string[];
+                /** @description Direct/transitive dependency filter flag */
+                dependencyDirect?: boolean[];
+                /** @description Development/production dependency filter flag */
+                dependencyDev?: boolean[];
+                /** @description Dead/reachable dependency filter flag */
+                dependencyDead?: boolean[];
+              };
+            };
+            items: {
+                /** @default */
+                date: string;
+                /** @default 0 */
+                startOfDayTimestamp: number;
+                dataPoints: {
+                    aggregationGroup: string[];
+                    /** @default 0 */
+                    count: number;
+                    /** @default 0 */
+                    countDelta: number;
+                    /** @default 0 */
+                    countDirect: number;
+                    /** @default 0 */
+                    countDirectDelta: number;
+                    /** @default 0 */
+                    countIndirect: number;
+                    /** @default 0 */
+                    countIndirectDelta: number;
+                    countsBySeverity: {
+                      low: {
+                        /** @default 0 */
+                        count: number;
+                        /** @default 0 */
+                        countDelta: number;
+                        /** @default 0 */
+                        countDirect: number;
+                        /** @default 0 */
+                        countDirectDelta: number;
+                        /** @default 0 */
+                        countIndirect: number;
+                        /** @default 0 */
+                        countIndirectDelta: number;
+                      };
+                      medium: {
+                        /** @default 0 */
+                        count: number;
+                        /** @default 0 */
+                        countDelta: number;
+                        /** @default 0 */
+                        countDirect: number;
+                        /** @default 0 */
+                        countDirectDelta: number;
+                        /** @default 0 */
+                        countIndirect: number;
+                        /** @default 0 */
+                        countIndirectDelta: number;
+                      };
+                      high: {
+                        /** @default 0 */
+                        count: number;
+                        /** @default 0 */
+                        countDelta: number;
+                        /** @default 0 */
+                        countDirect: number;
+                        /** @default 0 */
+                        countDirectDelta: number;
+                        /** @default 0 */
+                        countIndirect: number;
+                        /** @default 0 */
+                        countIndirectDelta: number;
+                      };
+                      critical: {
+                        /** @default 0 */
+                        count: number;
+                        /** @default 0 */
+                        countDelta: number;
+                        /** @default 0 */
+                        countDirect: number;
+                        /** @default 0 */
+                        countDirectDelta: number;
+                        /** @default 0 */
+                        countIndirect: number;
+                        /** @default 0 */
+                        countIndirectDelta: number;
+                      };
+                    };
+                  }[];
+              }[];
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * List details of periodic historical data snapshots (Beta)
+   * @description This API endpoint is used to list the details of historical snapshots.
+   * Snapshots of organization data are taken periodically, and
+   * each historical snapshot record contains high-level overview metrics about the data
+   * that was collected. Other [Historical Data Endpoints](/reference/historical-data-endpoints)
+   * can be used to fetch the raw data associated with each snapshot.
+   *
+   * Historical snapshots contain details and raw data for the following resources:
+   *
+   * - Repositories
+   * - Alerts
+   * - Dependencies
+   * - Artifacts
+   * - Users
+   * - Settings
+   *
+   * Daily snapshot data is bucketed to the nearest day which is described in
+   * more detail at: [Historical Data Endpoints](/reference/historical-data-endpoints)
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - historical:snapshots-list
+   */
+  historicalSnapshotsList: {
+    parameters: {
+      query?: {
+        /** @description The UTC date in YYYY-MM-DD format for which to fetch snapshots */
+        date?: string;
+        /** @description The number of days of data to fetch as an offset from input date (e.g. "-7d" or "7d") or use "latest" to query for latest snapshots for each repo */
+        range?: string;
+        /** @description Specify the maximum number of results to return per page (intermediate pages may have fewer than this limit and callers should always check "endCursor" in response body to know if there are more pages) */
+        per_page?: number;
+        /** @description The pagination cursor that was returned as the "endCursor" property in previous request */
+        startAfterCursor?: string;
+        /** @description Comma-separated list of historical snapshot statuses that should be included (allowed: "in-progress", "success", "failure", "timeout") */
+        "filters.status"?: string;
+        /** @description Comma-separated list of requestId values that were used to start the historical snapshot job */
+        "filters.requestId"?: string;
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The historical snapshots. */
+      200: {
+        content: {
+          "application/json": {
+            meta: {
+              /** @default */
+              organizationId: string;
+              /** @default 0 */
+              queryStartTimestamp: number;
+              /** @default */
+              startDateInclusive: string;
+              /** @default */
+              endDateInclusive: string;
+              filters: {
+                status?: string[];
+                requestId?: string[];
+              };
+            };
+            items: ({
+                /** @default */
+                id: string;
+                /** @default */
+                requestId: string;
+                /** @default */
+                requestedBy: string;
+                /** @default */
+                requestedAt: string;
+                /** @default */
+                startedAt: string;
+                /** @default */
+                finishedAt: string | null;
+                /** @default 0 */
+                durationMs: number;
+                /** @default */
+                status: string;
+                /** @default 0 */
+                numReposScanned: number;
+                /** @default 0 */
+                numSbomsScanned: number;
+                /** @default 0 */
+                numLowAlerts: number;
+                /** @default 0 */
+                numHighAlerts: number;
+                /** @default 0 */
+                numMediumAlerts: number;
+                /** @default 0 */
+                numCriticalAlerts: number;
+                /** @default 0 */
+                numIgnoredLowAlerts: number;
+                /** @default 0 */
+                numIgnoredHighAlerts: number;
+                /** @default 0 */
+                numIgnoredMediumAlerts: number;
+                /** @default 0 */
+                numIgnoredCriticalAlerts: number;
+              })[];
+            /** @default */
+            endCursor: string | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Start historical data snapshot job (Beta)
+   * @description This API endpoint is used to start a historical snapshot job. While
+   * snapshots are typically taken at least once a day, this endpoint can
+   * be used to start an "on demand" snapshot job to ensure the latest
+   * data is collected and stored for historical purposes.
+   *
+   * An historical snapshot will contain details and raw data for the following resources:
+   *
+   * - Repositories
+   * - Alerts
+   * - Dependencies
+   * - Artifacts
+   * - Users
+   * - Settings
+   *
+   * Historical snapshot data is bucketed to the nearest day which is described in
+   * more detail at: [Historical Data Endpoints](/reference/historical-data-endpoints)
+   *
+   * This endpoint consumes 10 units of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - historical:snapshots-start
+   */
+  historicalSnapshotsStart: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The details of the snapshot job request. */
+      200: {
+        content: {
+          "application/json": {
+            /** @default */
+            requestId: string;
+            /** @default */
+            requestedBy: string;
+            /** @default */
+            requestedAt: string;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get supported file types
+   * @description Get a list of supported files for full scan generation.
+   * Files are categorized first by environment (e.g. NPM or PyPI), then by name.
+   *
+   * Files whose names match the patterns returned by this endpoint can be uploaded for report generation.
+   * Examples of supported filenames include `package.json`, `package-lock.json`, and `yarn.lock`.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - No Scopes Required, but authentication is required
+   */
+  getSupportedFiles: {
+    parameters: {
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description Glob patterns used to match supported files */
+      200: {
+        content: {
+          "application/json": {
+            [key: string]: {
+              [key: string]: {
+                /** @default */
+                pattern: string;
+              };
+            };
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get Threat Feed Items (Deprecated)
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/getorgthreatfeeditems) for more information. Use the [successor version](/v0/orgs/{org_slug}/threat-feed) instead.
+   *
+   * Paginated list of threat feed items.
+   *
+   * This endpoint requires an Enterprise Plan with Threat Feed add-on. [Contact](https://socket.dev/demo?utm_source=api-docs&utm_medium=referral&utm_campaign=tracking) our sales team for more details.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - threat-feed:list
+   */
+  getThreatFeedItems: {
+    parameters: {
+      query?: {
+        /** @description Number of threats per page */
+        per_page?: number;
+        /** @description Page token */
+        page?: string;
+        /** @description Sort sort the threat feed by ID or createdAt attribute. */
+        sort?: "id" | "created_at";
+        /** @description Filter results by discovery period */
+        discovery_period?: "1h" | "6h" | "1d" | "7d" | "30d" | "90d" | "365d";
+        /** @description Ordering direction of the sort attribute */
+        direction?: "desc" | "asc";
+        /** @description Filter what type of threats to return */
+        filter?: "u" | "c" | "fp" | "tp" | "mal" | "vuln" | "anom" | "joke" | "spy" | "typo" | "secret" | "obf";
+        /** @description Filter threats by package name */
+        name?: string;
+        /** @description Filter threats by package version */
+        version?: string;
+        /** @description Only return threats which have been human-reviewed */
+        is_human_reviewed?: boolean;
+        /** @description Filter threats by package ecosystem type */
+        ecosystem?: "github" | "cargo" | "chrome" | "golang" | "huggingface" | "maven" | "npm" | "nuget" | "pypi" | "gem";
+      };
+    };
+    responses: {
+      /** @description The paginated list of threats in the feed and the next page querystring token. */
+      200: {
+        content: {
+          "application/json": {
+            results: ({
+                /** @default */
+                createdAt?: string;
+                /** @default */
+                updatedAt?: string;
+                /** @default */
+                description?: string;
+                /** @default 0 */
+                id?: number;
+                /** @default */
+                locationHtmlUrl?: string;
+                /** @default */
+                packageHtmlUrl?: string;
+                /** @default */
+                purl?: string;
+                /** @default */
+                removedAt?: string | null;
+                /** @default */
+                threatType?: string;
+                /**
+                 * @description Whether the threat still is in need of human review by the threat research team
+                 * @default false
+                 */
+                needsHumanReview?: boolean;
+              })[];
+            /** @default */
+            nextPage: string | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
+   * Get Threat Feed Items (Beta)
+   * @description Paginated list of threats, sorted by updated_at by default. Set updated_after to the unix timestamp of your last sync while sorting by updated_at to synchronize all new or updated threats in the feed.
+   *
+   * This endpoint requires an Enterprise Plan with Threat Feed add-on. [Contact](https://socket.dev/demo?utm_source=api-docs&utm_medium=referral&utm_campaign=tracking) our sales team for more details.
+   *
+   * This endpoint consumes 1 unit of your quota.
+   *
+   * This endpoint requires the following org token scopes:
+   * - threat-feed:list
+   */
+  getOrgThreatFeedItems: {
+    parameters: {
+      query?: {
+        /** @description Number of threats per page */
+        per_page?: number;
+        /** @description Page cursor token. Pass the returned nextPageCursor to this query string to fetch the next page of the threat feed. */
+        page_cursor?: string;
+        /** @description Set the sort order for the threat feed items. Default is descending order by updated_at, which includes all new and updated threat feed items. */
+        sort?: "id" | "created_at" | "updated_at";
+        /** @description A Unix timestamp in seconds that filters results to items only updated after the timestamp. */
+        updated_after?: string;
+        /** @description A Unix timestamp in seconds that filters results to items only created after the date. */
+        created_after?: string;
+        /** @description Order direction of the provided sort field. */
+        direction?: "desc" | "asc";
+        /** @description Filter what type of threats to return */
+        filter?: "u" | "c" | "fp" | "tp" | "mal" | "vuln" | "anom" | "joke" | "spy" | "typo" | "secret" | "obf";
+        /** @description Filter threats by package name */
+        name?: string;
+        /** @description Filter threats by package version. */
+        version?: string;
+        /** @description Only return threats which have been human-reviewed */
+        is_human_reviewed?: boolean;
+        /** @description Filter threats by package ecosystem type */
+        ecosystem?: "github" | "cargo" | "chrome" | "golang" | "huggingface" | "maven" | "npm" | "nuget" | "pypi" | "gem";
+      };
+      path: {
+        /** @description The slug of the organization */
+        org_slug: string;
+      };
+    };
+    responses: {
+      /** @description The paginated list of items in the threat feed and the next page cursor. */
+      200: {
+        content: {
+          "application/json": {
+            results: ({
+                /** @default */
+                createdAt?: string;
+                /** @default */
+                updatedAt?: string;
+                /** @default */
+                description?: string;
+                /** @default 0 */
+                id?: number;
+                /** @default */
+                locationHtmlUrl?: string;
+                /** @default */
+                packageHtmlUrl?: string;
+                /** @default */
+                purl?: string;
+                /** @default */
+                removedAt?: string | null;
+                /** @default */
+                threatType?: string;
+                /**
+                 * @description Whether the threat still is in need of human review by the threat research team
+                 * @default false
+                 */
+                needsHumanReview?: boolean;
+              })[];
+            /** @default */
+            nextPageCursor: string | null;
+          };
+        };
+      };
+      400: components["responses"]["SocketBadRequest"];
+      401: components["responses"]["SocketUnauthorized"];
+      403: components["responses"]["SocketForbidden"];
+      404: components["responses"]["SocketNotFoundResponse"];
+      429: components["responses"]["SocketTooManyRequestsResponse"];
+    };
+  };
+  /**
    * Get organization analytics (unstable)
-   * @description Get analytics data regarding the number of alerts found across all active repositories.
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/historicalalertstrend) for more information. Use the [successor version](/v0/orgs/{org_slug}/historical/alerts/trend) instead.
+   *
+   * Please implement against the [Historical dependencies](/reference/historicaldependenciestrend) or [Historical alerts](/reference/historicalalertstrend) endpoints.
+   *
+   * Get analytics data regarding the number of alerts found across all active repositories.
    *
    * This endpoint consumes 1 unit of your quota.
    *
@@ -3340,7 +12483,12 @@ export interface operations {
   };
   /**
    * Get repository analytics
-   * @description Get analytics data regarding the number of alerts found in a single repository.
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/historicalalertstrend) for more information. Use the [successor version](/v0/orgs/{org_slug}/historical/alerts/trend) instead.
+   *
+   * Please implement against the [Historical dependencies](/reference/historicaldependenciestrend) or [Historical alerts](/reference/historicalalertstrend) endpoints.
+   *
+   * Get analytics data regarding the number of alerts found in a single repository.
    *
    * This endpoint consumes 1 unit of your quota.
    *
@@ -3412,7 +12560,7 @@ export interface operations {
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
-   * - Any
+   * - No Scopes Required, but authentication is required
    */
   searchDependencies: {
     requestBody?: {
@@ -3422,6 +12570,7 @@ export interface operations {
           limit: number;
           /** @default 0 */
           offset: number;
+          purls?: string[];
         };
       };
     };
@@ -3436,6 +12585,10 @@ export interface operations {
             limit: number;
             /** @default 0 */
             offset: number;
+            purlFilters: {
+              valid: string[];
+              invalid: string[];
+            };
             rows: {
                 /** @default */
                 branch: string;
@@ -3446,13 +12599,13 @@ export interface operations {
                 /** @default */
                 name: string;
                 /** @default */
-                namespace: string;
-                /** @default */
                 repository: string;
                 /** @default */
                 type: string;
                 /** @default */
-                version: string;
+                namespace?: string;
+                /** @default */
+                version?: string;
               }[];
           };
         };
@@ -3466,7 +12619,10 @@ export interface operations {
   };
   /**
    * Create a snapshot of all dependencies from manifest information
-   * @description Upload a set of manifest or lockfiles to get your dependency tree analyzed by Socket.
+   * @deprecated
+   * @description **This endpoint is deprecated.**
+   *
+   * Upload a set of manifest or lockfiles to get your dependency tree analyzed by Socket.
    * You can upload multiple lockfiles in the same request, but each filename must be unique.
    *
    * The name of the file must be in the supported list.
@@ -3512,7 +12668,12 @@ export interface operations {
   };
   /**
    * Get supported files for report
-   * @description Get a list of supported files for project report generation.
+   * @deprecated
+   * @description **This endpoint is deprecated.** Deprecated since 2023-01-15. See [deprecation documentation](https://docs.socket.dev/reference/getsupportedfiles) for more information. Use the [successor version](/v0/orgs/{org_slug}/supported-files) instead.
+   *
+   * This route has been moved to the `orgs/{org_slug}/supported-files` endpoint.
+   *
+   * Get a list of supported files for project report generation.
    * Files are categorized first by environment (e.g. NPM or PyPI), then by name.
    *
    * Files whose names match the patterns returned by this endpoint can be uploaded for report generation.
@@ -3543,7 +12704,10 @@ export interface operations {
   };
   /**
    * Delete a report
-   * @description Delete a specific project report generated with the GitHub app. These endpoints will be merged into the full-scans endpoint so
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference) for more information. Use the [successor version](/v0/orgs/{org_slug}/full-scans) instead.
+   *
+   * Deprecated: Use `/orgs/{org_slug}/full-scans` instead. Delete a specific project report generated with the GitHub app.
    *
    * This endpoint consumes 10 units of your quota.
    *
@@ -3575,7 +12739,10 @@ export interface operations {
   };
   /**
    * Get list of reports
-   * @description Get all your project reports generated with the GitHub app. This endpoint will be merged into the full-scans endpoint soon.
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference) for more information. Use the [successor version](/v0/orgs/{org_slug}/full-scans) instead.
+   *
+   * Deprecated: Use `/orgs/{org_slug}/full-scans` instead. Get all your project reports generated with the GitHub app.
    *
    * This endpoint consumes 10 units of your quota.
    *
@@ -3624,7 +12791,12 @@ export interface operations {
   };
   /**
    * Create a report
-   * @description Upload a lockfile to get your project analyzed by Socket.
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/createorgfullscan) for more information. Use the [successor version](/v0/orgs/{org_slug}/full-scans) instead.
+   *
+   * Deprecated: Use `/orgs/{org_slug}/full-scans` instead.
+   *
+   * Upload a lockfile to get your project analyzed by Socket.
    * You can upload multiple lockfiles in the same request, but each filename must be unique.
    *
    * The name of the file must be in the supported list.
@@ -3667,7 +12839,10 @@ export interface operations {
   };
   /**
    * View a report
-   * @description Get all the issues, packages, and scores related to an specific project report.
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/getorgfullscan) for more information. Use the [successor version](/v0/orgs/{org_slug}/full-scans/{full_scan_id}) instead.
+   *
+   * Deprecated: Use `/orgs/{org_slug}/full-scans` instead. Get all the issues, packages, and scores related to an specific project report.
    *
    * This endpoint consumes 10 units of your quota.
    *
@@ -3698,7 +12873,9 @@ export interface operations {
   /**
    * List GitHub repositories
    * @deprecated
-   * @description Get all GitHub repositories associated with a Socket org.
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/getorgrepolist) for more information. Use the [successor version](/v0/orgs/{org_slug}/repos) instead.
+   *
+   * Deprecated: Use `/orgs/{org_slug}/repos` instead. Get all GitHub repositories associated with a Socket org.
    *
    * This endpoint consumes 1 unit of your quota.
    *
@@ -3716,30 +12893,30 @@ export interface operations {
       200: {
         content: {
           "application/json": {
-            results: {
+            results: ({
                 /** @default */
-                id?: string;
+                id: string;
                 /** @default */
-                created_at?: string;
+                created_at: string;
                 /** @default */
-                updated_at?: string;
+                updated_at: string;
                 /** @default */
-                github_install_id?: string;
+                github_install_id: string;
                 /** @default */
-                github_repo_id?: string;
+                github_repo_id: string;
                 /** @default */
-                name?: string;
+                name: string;
                 /** @default */
-                github_full_name?: string;
+                github_full_name: string;
                 /** @default */
-                organization_id?: string;
+                organization_id: string | null;
                 latest_project_report?: {
                   /** @default */
                   id: string;
                   /** @default */
                   created_at: string;
                 };
-              }[];
+              })[];
           };
         };
       };
@@ -3776,7 +12953,7 @@ export interface operations {
    * This endpoint consumes 0 units of your quota.
    *
    * This endpoint requires the following org token scopes:
-   * - Any
+   * - No Scopes Required, but authentication is required
    */
   getQuota: {
     responses: {
@@ -3795,12 +12972,12 @@ export interface operations {
   };
   /**
    * List organizations
-   * @description Get information on the current organizations associated with the API key.
+   * @description Get information on the current organizations associated with the API token.
    *
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
-   * - Any
+   * - No Scopes Required, but authentication is required
    */
   getOrganizations: {
     responses: {
@@ -3813,9 +12990,9 @@ export interface operations {
                 /** @default */
                 id: string;
                 /** @default */
-                name: string;
+                name: string | null;
                 /** @default */
-                image: string;
+                image: string | null;
                 /** @default */
                 plan: string;
                 /** @default */
@@ -3831,14 +13008,18 @@ export interface operations {
   };
   /**
    * Calculate settings
-   * @description Get your current settings the requested organizations and default settings to allow deferrals.
+   * @deprecated
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/updateorgsecuritypolicy) for more information. Use the [successor version](/v0/orgs/{org_slug}/settings/security-policy) instead.
+   *
+   * Get current settings for the requested organizations and default settings to allow deferrals.
    *
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
-   * - Any
+   * - No Scopes Required, but authentication is required
    */
   postSettings: {
+    /** @description Array of organization selector objects (with `organization` field holding the organization ID) to get settings for */
     requestBody?: {
       content: {
         "application/json": {
@@ -3848,7 +13029,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Organization settings */
+      /** @description Organization settings. Returned object contains default issue rules and an array of entries, with each entry representing an organization's settings. */
       200: {
         content: {
           "application/json": {
@@ -3886,15 +13067,17 @@ export interface operations {
   /**
    * Get issues by package
    * @deprecated
-   * @description Get all the issues related with a particular npm package version.
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference) for more information. Use the [successor version](/v0/purl/{purl}/issues) instead.
+   *
+   * Get all the issues related with a particular npm package version.
    * This endpoint returns the issue type, location, and additional details related to each issue in the `props` attribute.
    *
-   * You can [see here](https://socket.dev/npm/issue) the full list of issues.
+   * You can [see here](https://socket.dev/alerts) the full list of issues.
    *
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
-   * - Any
+   * - No Scopes Required, but authentication is required
    */
   getIssuesByNPMPackage: {
     parameters: {
@@ -3920,9 +13103,9 @@ export interface operations {
   /**
    * Get score by package
    * @deprecated
-   * @description Get all the scores and metrics by category that are used to evaluate the package version.
+   * @description **This endpoint is deprecated.** See [deprecation documentation](https://docs.socket.dev/reference/batchpackagefetch) for more information. Use the [successor version](/v0/purl) instead.
    *
-   * This endpoint is deprecated. Use the batched "Get Packages" endpoint instead.
+   * Get all the scores and metrics by category that are used to evaluate the package version.
    *
    * - depscore: The average of all score factors. (0-1)
    * - supplyChainRisk: Score factors relating to supply chain security (0-1)
@@ -3957,7 +13140,7 @@ export interface operations {
    * This endpoint consumes 1 unit of your quota.
    *
    * This endpoint requires the following org token scopes:
-   * - Any
+   * - No Scopes Required, but authentication is required
    */
   getScoreByNPMPackage: {
     parameters: {
