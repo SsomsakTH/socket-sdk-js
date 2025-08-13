@@ -434,10 +434,13 @@ export interface paths {
      *
      * Supported ecosystems:
      *
+     * - crates
      * - go
      * - maven
      * - npm
+     * - nuget
      * - pypi
+     * - rubygems
      * - spdx
      * - cdx
      *
@@ -457,10 +460,13 @@ export interface paths {
      *
      * Supported ecosystems:
      *
+     * - crates
      * - go
      * - maven
      * - npm
+     * - nuget
      * - pypi
+     * - rubygems
      * - spdx
      * - cdx
      *
@@ -1485,7 +1491,12 @@ export interface components {
       alerts?: components["schemas"]["SocketAlert"][];
       score?: components["schemas"]["SocketScore"];
       /**
-       * @description Index position of this artifact within its processing batch, used for ordering and pagination
+       * @description Original unmodified PURL input string before normalization
+       * @default
+       */
+      inputPurl?: string;
+      /**
+       * @description Deprecated: Always 0. Previously used for batch ordering but replaced by inputPurl for better tracking.
        * @default 0
        */
       batchIndex?: number;
@@ -2088,7 +2099,7 @@ export interface components {
       artifact?: components["schemas"]["SocketPURL"] & {
         id: components["schemas"]["SocketId"];
       };
-      /** @description Mapping of alert keys to arrays of reachability types found across different manifest files or code locations. Each type indicates whether the vulnerable code is actually used: "reachable" (definitely used), "maybe_reachable" (potentially used), "unreachable" (not used), "unknown" (cannot determine), etc. Multiple types per alert can occur when the same vulnerability appears in different contexts. */
+      /** @description Deprecated: mapping of alert keys to arrays of reachability types found across different manifest files or code locations. This field is derived from alertKeysToReachabilitySummaries for backward compatibility; use that property instead. */
       alertKeysToReachabilityTypes?: {
         [key: string]: string[];
       };
@@ -4792,10 +4803,13 @@ export interface operations {
    *
    * Supported ecosystems:
    *
+   * - crates
    * - go
    * - maven
    * - npm
+   * - nuget
    * - pypi
+   * - rubygems
    * - spdx
    * - cdx
    *
@@ -4851,10 +4865,13 @@ export interface operations {
    *
    * Supported ecosystems:
    *
+   * - crates
    * - go
    * - maven
    * - npm
+   * - nuget
    * - pypi
+   * - rubygems
    * - spdx
    * - cdx
    *
@@ -8469,6 +8486,7 @@ export interface operations {
            * @enum {string}
            */
           issueRulesPolicyDefault?: "default" | "low" | "medium" | "high";
+          licensePolicy?: components["schemas"]["LicenseAllowListRequest"];
         };
       };
     };
@@ -8821,8 +8839,6 @@ export interface operations {
           /** @default 1000 */
           max_quota: number;
           scopes: ("alerts" | "alerts:list" | "alerts:trend" | "api-tokens" | "api-tokens:create" | "api-tokens:update" | "api-tokens:revoke" | "api-tokens:rotate" | "api-tokens:list" | "audit-log" | "audit-log:list" | "dependencies" | "dependencies:list" | "dependencies:trend" | "full-scans" | "full-scans:list" | "full-scans:create" | "full-scans:delete" | "diff-scans" | "diff-scans:list" | "diff-scans:create" | "diff-scans:delete" | "historical" | "historical:snapshots-list" | "historical:snapshots-start" | "historical:alerts-list" | "historical:alerts-trend" | "historical:dependencies-list" | "historical:dependencies-trend" | "integration" | "integration:list" | "integration:create" | "integration:update" | "integration:delete" | "license-policy" | "license-policy:update" | "license-policy:read" | "packages" | "packages:list" | "report" | "report:list" | "report:read" | "report:write" | "repo" | "repo:list" | "repo:create" | "repo:update" | "repo:delete" | "repo-label" | "repo-label:list" | "repo-label:create" | "repo-label:update" | "repo-label:delete" | "security-policy" | "security-policy:update" | "security-policy:read" | "threat-feed" | "threat-feed:list" | "triage" | "triage:alerts-list" | "triage:alerts-update")[];
-          /** @default */
-          token: string;
           /**
            * @description The visibility of the API Token. Warning: this field is deprecated and will be removed in the future.
            * @default organization
