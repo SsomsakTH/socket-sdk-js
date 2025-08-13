@@ -341,9 +341,14 @@
               "score": {
                 "$ref": "#/components/schemas/SocketScore"
               },
+              "inputPurl": {
+                "type": "string",
+                "description": "Original unmodified PURL input string before normalization",
+                "default": ""
+              },
               "batchIndex": {
                 "type": "integer",
-                "description": "Index position of this artifact within its processing batch, used for ordering and pagination",
+                "description": "Deprecated: Always 0. Previously used for batch ordering but replaced by inputPurl for better tracking.",
                 "default": 0
               },
               "license": {
@@ -1938,7 +1943,7 @@
               "description": ""
             },
             "properties": {},
-            "description": "Mapping of alert keys to arrays of reachability types found across different manifest files or code locations. Each type indicates whether the vulnerable code is actually used: \"reachable\" (definitely used), \"maybe_reachable\" (potentially used), \"unreachable\" (not used), \"unknown\" (cannot determine), etc. Multiple types per alert can occur when the same vulnerability appears in different contexts."
+            "description": "Deprecated: mapping of alert keys to arrays of reachability types found across different manifest files or code locations. This field is derived from alertKeysToReachabilitySummaries for backward compatibility; use that property instead."
           },
           "alertKeysToReachabilitySummaries": {
             "type": "object",
@@ -10128,7 +10133,7 @@
             ]
           }
         ],
-        "description": "Export a Socket SBOM as a CycloneDX SBOM\n\nSupported ecosystems:\n\n- go\n- maven\n- npm\n- pypi\n- spdx\n- cdx\n\nUnsupported ecosystems are filtered from the export.\n\nThis endpoint consumes 1 unit of your quota.\n\nThis endpoint requires the following org token scopes:\n- report:read",
+        "description": "Export a Socket SBOM as a CycloneDX SBOM\n\nSupported ecosystems:\n\n- crates\n- go\n- maven\n- npm\n- nuget\n- pypi\n- rubygems\n- spdx\n- cdx\n\nUnsupported ecosystems are filtered from the export.\n\nThis endpoint consumes 1 unit of your quota.\n\nThis endpoint requires the following org token scopes:\n- report:read",
         "responses": {
           "200": {
             "content": {
@@ -10255,7 +10260,7 @@
             ]
           }
         ],
-        "description": "Export a Socket SBOM as a SPDX SBOM\n\nSupported ecosystems:\n\n- go\n- maven\n- npm\n- pypi\n- spdx\n- cdx\n\nUnsupported ecosystems are filtered from the export.\n\nThis endpoint consumes 1 unit of your quota.\n\nThis endpoint requires the following org token scopes:\n- report:read",
+        "description": "Export a Socket SBOM as a SPDX SBOM\n\nSupported ecosystems:\n\n- crates\n- go\n- maven\n- npm\n- nuget\n- pypi\n- rubygems\n- spdx\n- cdx\n\nUnsupported ecosystems are filtered from the export.\n\nThis endpoint consumes 1 unit of your quota.\n\nThis endpoint requires the following org token scopes:\n- report:read",
         "responses": {
           "200": {
             "content": {
@@ -20056,6 +20061,9 @@
                     ],
                     "description": "The default security policy for the repository label",
                     "default": "medium"
+                  },
+                  "licensePolicy": {
+                    "$ref": "#/components/schemas/LicenseAllowListRequest"
                   }
                 },
                 "description": ""
@@ -20606,11 +20614,6 @@
                     },
                     "description": ""
                   },
-                  "token": {
-                    "type": "string",
-                    "description": "",
-                    "default": ""
-                  },
                   "visibility": {
                     "type": "string",
                     "enum": [
@@ -20664,7 +20667,6 @@
                   "committer",
                   "max_quota",
                   "scopes",
-                  "token",
                   "visibility"
                 ]
               }
